@@ -13,22 +13,25 @@ namespace DeviceHub.Agent.Core;
 /// HID 设备按 PnP ContainerId 把同一物理设备的多个顶层集合聚合成一个 <see cref="DeviceInfo"/>
 /// （例如 2.4G 接收器的键盘/多媒体/厂商配置集合），授权以物理设备为单位。
 /// 插件 I/O 指定通道角色，由 manifest 声明解析到具体集合；未声明的集合插件无法访问。
+/// 蓝牙设备（AirPods）由 <see cref="BluetoothService"/> 提供，走同一套授权与通道解析。
 /// </summary>
 public sealed class DeviceBroker : IDisposable
 {
     private readonly ILogger<DeviceBroker> _log;
     private readonly PermissionService _perms;
     private readonly PluginManager _plugins;
+    private readonly BluetoothService _bt;
     private readonly ConcurrentDictionary<string, SafeFileHandle> _openHandles = new(); // "deviceKey|channelId" → handle
     private readonly ConcurrentDictionary<string, NativeHid.HidPath> _channels = new(); // "deviceKey|channelId" → 集合
     private readonly ConcurrentDictionary<string, DeviceInfo> _devices = new();        // deviceKey → 最近一次枚举结果
 
-    public DeviceBroker(ILogger<DeviceBroker> log, PermissionService perms, PluginManager plugins)
+    public DeviceBroker(ILogger<DeviceBroker> log, PermissionService perms, PluginManager plugins, BluetoothService bt)
     {
         _log = log;
         _perms = perms;
         _plugins = plugins;
-        _perms.GrantRevoked += (_, deviceKey) => CloseHandles(deviceKey);
+        _bt = bt;
+        _perms.GrantRevoked += (_, deviceKey) => { CloseHandles(deviceKey); _bt.CloseAap(deviceKey); };
     }
 
     public IReadOnlyList<DeviceInfo> Enumerate()
@@ -73,6 +76,11 @@ public sealed class DeviceBroker : IDisposable
             _devices[key] = dev;
             list.Add(dev);
         }
+        foreach (var dev in _bt.Devices())
+        {
+            _devices[dev.DeviceKey] = dev;
+            list.Add(dev);
+        }
         return list;
     }
 
@@ -92,9 +100,13 @@ public sealed class DeviceBroker : IDisposable
             NativeHid.SetFeature(h, report) ? DeviceIoResult.Success()
                                             : DeviceIoResult.Fail(DeviceIoStatus.Error, "SetFeature 失败"));
 
-    /// <summary>写 Output 报告（WriteFile → 中断 OUT），按集合的 OutputReportByteLength 补零。</summary>
+    /// <summary>写 Output 报告（WriteFile → 中断 OUT），按集合的 OutputReportByteLength 补零。aap 通道：发送一帧 AAP。</summary>
     public Task<DeviceIoResult> WriteOutputAsync(string pluginId, string deviceKey, string? channel, byte[] report)
-        => Guarded(pluginId, deviceKey, channel, (h, c) =>
+        => IsBluetooth(deviceKey)
+            ? GuardedBt(pluginId, deviceKey, channel, (c, spec) => Task.FromResult(c.Kind == ChannelKinds.Aap
+                ? _bt.SendAap(deviceKey, spec.Psm, report)
+                : DeviceIoResult.Fail(DeviceIoStatus.Error, "该通道只读")))
+            : Guarded(pluginId, deviceKey, channel, (h, c) =>
         {
             if (c.OutputLength == 0) return DeviceIoResult.Fail(DeviceIoStatus.Error, "该通道没有 Output 报告");
             return NativeHid.WriteOutput(h, report, c.OutputLength)
@@ -102,13 +114,44 @@ public sealed class DeviceBroker : IDisposable
                 : DeviceIoResult.Fail(DeviceIoStatus.Error, "WriteOutput 失败");
         });
 
-    /// <summary>读一个 Input 报告（ReadFile，带超时）。</summary>
+    /// <summary>读一个 Input 报告（ReadFile，带超时）。continuity / aap 通道：下一条广播 / 下一帧 AAP。</summary>
     public Task<DeviceIoResult> ReadInputAsync(string pluginId, string deviceKey, string? channel, int timeoutMs)
-        => Guarded(pluginId, deviceKey, channel, (h, c) =>
+    {
+        timeoutMs = Math.Clamp(timeoutMs, 1, 10_000);
+        if (IsBluetooth(deviceKey))
+            return GuardedBt(pluginId, deviceKey, channel, (c, spec) => c.Kind == ChannelKinds.Aap
+                ? _bt.ReceiveAapAsync(deviceKey, spec.Psm, timeoutMs)
+                : _bt.ReadAdvertAsync(deviceKey, timeoutMs));
+        return Guarded(pluginId, deviceKey, channel, (h, c) =>
         {
-            var data = NativeHid.ReadInput(h, c.InputLength, Math.Clamp(timeoutMs, 1, 10_000));
+            var data = NativeHid.ReadInput(h, c.InputLength, timeoutMs);
             return data is null ? DeviceIoResult.Fail(DeviceIoStatus.Timeout) : DeviceIoResult.Success(data);
         });
+    }
+
+    private static bool IsBluetooth(string deviceKey) => deviceKey.StartsWith("bt:", StringComparison.Ordinal);
+
+    /// <summary>蓝牙设备的授权 + 通道解析；Feature 报告这类 HID 专有操作不会走到这里。</summary>
+    private async Task<DeviceIoResult> GuardedBt(string pluginId, string deviceKey, string? channel,
+        Func<HidChannelInfo, ChannelMatch, Task<DeviceIoResult>> io)
+    {
+        if (_perms.GetGrant(pluginId, deviceKey) is AccessScope.Denied)
+            return DeviceIoResult.Fail(DeviceIoStatus.AccessDenied, "未授权");
+        try
+        {
+            var dev = _bt.Devices().FirstOrDefault(d => d.DeviceKey == deviceKey);
+            if (dev is null) return DeviceIoResult.Fail(DeviceIoStatus.DeviceGone);
+            var (ch, spec) = _plugins.ResolveChannelSpec(pluginId, dev, channel);
+            if (spec is null) return DeviceIoResult.Fail(DeviceIoStatus.AccessDenied, channel is null ? "插件未声明任何通道" : $"插件未声明通道 {channel}");
+            if (ch is null) return DeviceIoResult.Fail(DeviceIoStatus.DeviceGone, spec.Kind == ChannelKinds.Aap ? "未安装 AAP 驱动" : "设备没有该通道");
+            return await io(ch, spec);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "蓝牙 I/O 异常 {Device}", deviceKey);
+            return DeviceIoResult.Fail(DeviceIoStatus.Error, ex.Message);
+        }
+    }
 
     private Task<DeviceIoResult> Guarded(string pluginId, string deviceKey, string? channel,
         Func<SafeFileHandle, NativeHid.HidPath, DeviceIoResult> io)

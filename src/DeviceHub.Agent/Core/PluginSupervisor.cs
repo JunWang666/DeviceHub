@@ -153,6 +153,22 @@ public sealed class PluginSupervisor : IDisposable
         }
     }
 
+    /// <summary>设备集合变化后调用：运行中的插件接管新出现的已授权设备，并放开已消失的设备。</summary>
+    public async Task SyncDevicesAsync()
+    {
+        var present = _broker.Enumerate().Select(d => d.DeviceKey).ToHashSet();
+        foreach (var e in _hosts.Values.Where(e => e.State == PluginRunState.Running))
+        {
+            foreach (var gone in e.AttachedDevices.Where(k => !present.Contains(k)).ToList())
+            {
+                e.AttachedDevices.Remove(gone);
+                try { if (e.Api is { } api) await api.DetachDeviceAsync(gone); _log.LogInformation("设备已移除 {Dev} ← {Plugin}", gone, e.PluginId); }
+                catch (Exception ex) { _log.LogDebug(ex, "通知设备移除失败 {Dev}", gone); }
+            }
+            await AttachMatchingDevicesAsync(e);
+        }
+    }
+
     /// <summary>授权后由 App 调用：确保插件已启动并接管指定设备。</summary>
     public async Task<bool> AttachDeviceToAsync(string pluginId, string deviceKey)
     {

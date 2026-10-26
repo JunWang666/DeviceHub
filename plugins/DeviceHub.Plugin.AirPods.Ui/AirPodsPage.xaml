@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="DeviceHub.Plugin.AirPods.Ui.AirPodsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:DeviceHub.Plugin.AirPods.Ui"
+    xmlns:tk="using:CommunityToolkit.WinUI.Controls">
+
+    <UserControl.Resources>
+        <!-- 设置卡片之间 4px、分组之间 30px（WinUI 设置页规范） -->
+        <x:Double x:Key="CardSpacing">4</x:Double>
+        <Style x:Key="GroupHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+            <Setter Property="Margin" Value="1,30,0,6"/>
+        </Style>
+        <Style x:Key="TileStyle" TargetType="Border">
+            <Setter Property="Padding" Value="16,14"/>
+            <Setter Property="MinWidth" Value="180"/>
+            <Setter Property="CornerRadius" Value="{StaticResource OverlayCornerRadius}"/>
+            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}"/>
+            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer>
+        <StackPanel Spacing="{StaticResource CardSpacing}" Margin="0,0,0,36">
+            <InfoBar IsOpen="{x:Bind Vm.ShowUnauthorized, Mode=OneWay}" Severity="Warning" IsClosable="False"
+                     Title="未授权" Message="插件尚未获得此设备的访问授权。" Margin="0,0,0,8"/>
+
+            <!-- 概览 -->
+            <StackPanel Orientation="Horizontal" Spacing="12" Margin="1,0,0,10">
+                <FontIcon Glyph="&#xE7F6;" FontSize="28" VerticalAlignment="Center"/>
+                <StackPanel>
+                    <TextBlock Text="{x:Bind Vm.ModelName, Mode=OneWay}" Style="{StaticResource SubtitleTextBlockStyle}"/>
+                    <TextBlock Text="{x:Bind Vm.ConnectionText, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- 电量：左耳 / 充电盒 / 右耳（头戴式只有一个） -->
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Border Style="{StaticResource TileStyle}">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="{x:Bind Vm.Left.Title, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="{x:Bind Vm.Left.Glyph, Mode=OneWay}" FontSize="22"/>
+                            <TextBlock Text="{x:Bind Vm.Left.Percent, Mode=OneWay}" Style="{StaticResource SubtitleTextBlockStyle}"/>
+                        </StackPanel>
+                        <ProgressBar Value="{x:Bind Vm.Left.Value, Mode=OneWay}" Maximum="100" Visibility="{x:Bind Vm.Left.Known, Mode=OneWay}"/>
+                        <TextBlock Text="{x:Bind Vm.Left.Detail, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource TileStyle}" Visibility="{x:Bind Vm.ShowCase, Mode=OneWay}">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="{x:Bind Vm.Case.Title, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="{x:Bind Vm.Case.Glyph, Mode=OneWay}" FontSize="22"/>
+                            <TextBlock Text="{x:Bind Vm.Case.Percent, Mode=OneWay}" Style="{StaticResource SubtitleTextBlockStyle}"/>
+                        </StackPanel>
+                        <ProgressBar Value="{x:Bind Vm.Case.Value, Mode=OneWay}" Maximum="100" Visibility="{x:Bind Vm.Case.Known, Mode=OneWay}"/>
+                        <TextBlock Text="{x:Bind Vm.Case.Detail, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource TileStyle}" Visibility="{x:Bind Vm.ShowBuds, Mode=OneWay}">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="{x:Bind Vm.Right.Title, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="{x:Bind Vm.Right.Glyph, Mode=OneWay}" FontSize="22"/>
+                            <TextBlock Text="{x:Bind Vm.Right.Percent, Mode=OneWay}" Style="{StaticResource SubtitleTextBlockStyle}"/>
+                        </StackPanel>
+                        <ProgressBar Value="{x:Bind Vm.Right.Value, Mode=OneWay}" Maximum="100" Visibility="{x:Bind Vm.Right.Known, Mode=OneWay}"/>
+                        <TextBlock Text="{x:Bind Vm.Right.Detail, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+            <TextBlock Text="{x:Bind Vm.SourceText, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="1,6,0,0"/>
+
+            <!-- 降噪（需要 AAP 驱动） -->
+            <TextBlock Text="噪声控制" Style="{StaticResource GroupHeaderStyle}" Visibility="{x:Bind Vm.AncVisible, Mode=OneWay}"/>
+            <InfoBar IsOpen="{x:Bind Vm.ShowDriverNote, Mode=OneWay}" Severity="Informational" IsClosable="False"
+                     Title="高级功能不可用" Message="{x:Bind Vm.DriverNote, Mode=OneWay}" Margin="0,0,0,4"/>
+            <tk:SettingsCard Header="聆听模式" Description="{x:Bind Vm.AncDescription, Mode=OneWay}" Visibility="{x:Bind Vm.AncVisible, Mode=OneWay}">
+                <tk:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE995;"/></tk:SettingsCard.HeaderIcon>
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <RadioButton GroupName="Mode" Content="关闭" MinWidth="0" Tag="1" Click="Mode_Click"
+                                 IsChecked="{x:Bind Vm.ModeOff, Mode=OneWay}" IsEnabled="{x:Bind Vm.AncEnabled, Mode=OneWay}"/>
+                    <RadioButton GroupName="Mode" Content="降噪" MinWidth="0" Tag="2" Click="Mode_Click"
+                                 IsChecked="{x:Bind Vm.ModeAnc, Mode=OneWay}" IsEnabled="{x:Bind Vm.AncEnabled, Mode=OneWay}"/>
+                    <RadioButton GroupName="Mode" Content="通透" MinWidth="0" Tag="3" Click="Mode_Click"
+                                 IsChecked="{x:Bind Vm.ModeTransparency, Mode=OneWay}" IsEnabled="{x:Bind Vm.AncEnabled, Mode=OneWay}"/>
+                    <RadioButton GroupName="Mode" Content="自适应" MinWidth="0" Tag="4" Click="Mode_Click"
+                                 IsChecked="{x:Bind Vm.ModeAdaptive, Mode=OneWay}" IsEnabled="{x:Bind Vm.AdaptiveEnabled, Mode=OneWay}"/>
+                </StackPanel>
+            </tk:SettingsCard>
+            <tk:SettingsCard Header="对话感知" Description="开始说话时自动降低媒体音量并增强人声" Visibility="{x:Bind Vm.ConversationVisible, Mode=OneWay}">
+                <tk:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE720;"/></tk:SettingsCard.HeaderIcon>
+                <ToggleSwitch OnContent="开" OffContent="关" MinWidth="0"
+                              IsOn="{x:Bind Vm.ConversationOn, Mode=TwoWay}" IsEnabled="{x:Bind Vm.AncEnabled, Mode=OneWay}"/>
+            </tk:SettingsCard>
+
+            <TextBlock Text="{x:Bind Vm.Status, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="1,8,0,0"/>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

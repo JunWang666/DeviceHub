@@ -55,9 +55,14 @@ public static class DeviceDetailsDialog
 
         if (d?.Device.Channels is { Count: > 0 } chans)
         {
-            Section(panel, "HID 通道");
+            Section(panel, d.Device.Bus == DeviceBus.Hid ? "HID 通道" : "通道");
             foreach (var c in chans)
-                Row(panel, c.Id, $"输入 {c.InputLength} · 输出 {c.OutputLength} · 特性 {c.FeatureLength} 字节");
+                Row(panel, c.Id, c.Kind switch
+                {
+                    ChannelKinds.Continuity => "BLE 广播中的 Apple 接近配对包（只读）",
+                    ChannelKinds.Aap => "AAP 控制通道（经第三方 L2CAP 驱动）",
+                    _ => $"输入 {c.InputLength} · 输出 {c.OutputLength} · 特性 {c.FeatureLength} 字节",
+                });
         }
 
         var dialog = new ContentDialog

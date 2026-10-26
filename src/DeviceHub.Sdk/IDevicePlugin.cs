@@ -61,9 +61,16 @@ public interface IDeviceChannel
     Task<AccessScope> RequestAccessAsync(string deviceKey, string reason);
     Task<DeviceIoResult> GetFeatureAsync(string deviceKey, byte reportId, int length, string? channel = null);
     Task<DeviceIoResult> SetFeatureAsync(string deviceKey, byte[] report, string? channel = null);
-    /// <summary>写 Output 报告（中断 OUT）。report[0] 为 report id，无 id 的集合填 0；不足长度由核心补零。</summary>
+    /// <summary>
+    /// 写 Output 报告（中断 OUT）。report[0] 为 report id，无 id 的集合填 0；不足长度由核心补零。
+    /// aap 通道：原样发送一帧 AAP 数据。
+    /// </summary>
     Task<DeviceIoResult> WriteOutputAsync(string deviceKey, byte[] report, string? channel = null);
-    /// <summary>读一个 Input 报告；timeoutMs 内无数据返回 Timeout。</summary>
+    /// <summary>
+    /// 读一个 Input 报告；timeoutMs 内无数据返回 Timeout。
+    /// continuity 通道：下一条与该设备型号相符的 Apple 接近配对广播（27 字节，加密段已清零，带 Rssi）；设备未连接时返回 DeviceGone。
+    /// aap 通道：下一帧 AirPods 推送的 AAP 数据。
+    /// </summary>
     Task<DeviceIoResult> ReadInputAsync(string deviceKey, int timeoutMs, string? channel = null);
 }
 

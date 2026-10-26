@@ -1,7 +1,7 @@
 namespace DeviceHub.Contracts;
 
-/// <summary>总线类型。</summary>
-public enum DeviceBus { Hid, Usb, Ble, Serial }
+/// <summary>总线类型。Bluetooth = 已配对的经典蓝牙设备（如 AirPods），Vid/Pid 取自它的 Device ID 记录。</summary>
+public enum DeviceBus { Hid, Usb, Ble, Serial, Bluetooth }
 
 /// <summary>授权范围。</summary>
 public enum AccessScope { Denied = 0, Once = 1, Always = 2 }
@@ -10,11 +10,15 @@ public enum AccessScope { Denied = 0, Once = 1, Always = 2 }
 public enum PluginRunState { Stopped, Starting, Running, Crashed, Disabled }
 
 /// <summary>
-/// 物理设备下的一个 HID 集合（顶层集合）。复合设备/接收器会暴露多个：键盘输入、多媒体键、厂商配置通道等。
+/// 物理设备下的一个通道。HID 设备的通道是顶层集合：复合设备/接收器会暴露多个（键盘输入、多媒体键、厂商配置通道等）。
+/// 蓝牙设备的通道由核心提供：continuity（BLE 广播里该设备的 Apple Continuity 状态包，只读）、
+/// aap（经第三方 L2CAP 驱动的 AAP 控制通道，驱动未安装时不存在）。
 /// 插件通过 manifest 声明需要哪些通道，I/O 时按声明的角色名访问，拿不到未声明的通道。
 /// </summary>
 public sealed record HidChannelInfo
 {
+    /// <summary>通道种类，见 <see cref="ChannelKinds"/>。</summary>
+    public string Kind { get; init; } = ChannelKinds.Hid;
     /// <summary>设备内唯一的通道标识，如 "mi02-ff01-0001"。</summary>
     public required string Id { get; init; }
     /// <summary>USB 接口号（mi_XX），非 USB 或未知为 -1。</summary>
@@ -36,10 +40,10 @@ public sealed record DeviceInfo
     public ushort Pid { get; init; }
     public string? Serial { get; init; }
     public required string DisplayName { get; init; }
-    /// <summary>同一物理设备的全部 HID 集合（按 ContainerId 聚合）。非 HID 设备为空。</summary>
+    /// <summary>同一物理设备的全部通道：HID 集合（按 ContainerId 聚合），或核心为蓝牙设备提供的通道。</summary>
     public IReadOnlyList<HidChannelInfo> Channels { get; init; } = Array.Empty<HidChannelInfo>();
     /// <summary>供 UI 显示：如 "6 个 HID 通道：mi00-0001-0006, …"。</summary>
-    public string ChannelSummary => Channels.Count == 0 ? "" : $"{Channels.Count} 个 HID 通道：{string.Join(", ", Channels.Select(c => c.Id))}";
+    public string ChannelSummary => Channels.Count == 0 ? "" : $"{Channels.Count} 个{(Bus == DeviceBus.Hid ? " HID " : "")}通道：{string.Join(", ", Channels.Select(c => c.Id))}";
     /// <summary>已匹配并接管此设备的插件 Id（空表示暂无插件接管）。</summary>
     public string? OwnerPluginId { get; init; }
     /// <summary>接管插件的显示名（供列表/页头显示"插件 XXX"）。</summary>
@@ -54,6 +58,16 @@ public sealed record DeviceInfo
     public bool HasOwner => !string.IsNullOrEmpty(OwnerPluginId);
     /// <summary>是否存在可管理此设备的候选插件（无候选的设备不进“新设备”列表）。</summary>
     public bool HasCandidatePlugin { get; init; }
+}
+
+/// <summary><see cref="HidChannelInfo.Kind"/> 的取值。</summary>
+public static class ChannelKinds
+{
+    public const string Hid = "hid";
+    /// <summary>BLE 广播中的 Apple 接近配对包（只读）。</summary>
+    public const string Continuity = "continuity";
+    /// <summary>AirPods 的 AAP 控制通道（L2CAP PSM 0x1001，需第三方驱动）。</summary>
+    public const string Aap = "aap";
 }
 
 /// <summary>插件清单与当前运行信息。</summary>
@@ -130,6 +144,8 @@ public sealed record DeviceIoResult
     public required DeviceIoStatus Status { get; init; }
     public byte[]? Data { get; init; }
     public string? Message { get; init; }
+    /// <summary>无线通道收到该包时的信号强度（dBm），其他通道为 null。</summary>
+    public short? Rssi { get; init; }
     public static DeviceIoResult Success(byte[]? data = null) => new() { Status = DeviceIoStatus.Ok, Data = data };
     public static DeviceIoResult Fail(DeviceIoStatus s, string? m = null) => new() { Status = s, Message = m };
 }

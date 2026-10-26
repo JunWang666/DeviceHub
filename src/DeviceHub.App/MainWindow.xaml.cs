@@ -47,6 +47,18 @@ public sealed partial class MainWindow : Window
         {
             var agent = _state.Client.Agent!;
             Console.WriteLine($"SELFTEST: 新设备={_state.NewDevices.Count} 正在管理={_state.ManagedDevices.Count}");
+            // 每个已安装插件的 XAML 都加载一次（不依赖设备在线；设备标识是假的，后端返回默认状态）。
+            foreach (var p in _state.Plugins.Where(p => p.UiAssemblyPath is not null && p.UiPageTypeName is not null))
+            {
+                try
+                {
+                    var b = new Services.PluginUiBridge(_state.Client, p.Id, "selftest:none");
+                    var pg = Services.PluginUiLoader.LoadPage(p.UiAssemblyPath!, p.UiPageTypeName!, b);
+                    Console.WriteLine($"SELFTEST: 插件 {p.Id} XAML 加载成功 type={pg.GetType().FullName}");
+                }
+                catch (Exception ex) { Console.WriteLine($"SELFTEST: 插件 {p.Id} XAML 加载失败 {ex.Message}"); }
+            }
+
             var dev = _state.NewDevices.FirstOrDefault() ?? _state.ManagedDevices.FirstOrDefault();
             if (dev is null) { Console.WriteLine("SELFTEST: 没有可被插件管理的设备"); return; }
             Console.WriteLine($"SELFTEST: {dev.DisplayName} [{dev.DeviceKey}] {dev.ChannelSummary}");

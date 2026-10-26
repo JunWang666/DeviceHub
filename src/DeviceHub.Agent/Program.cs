@@ -26,7 +26,8 @@ public static class Program
 
         var perms = new PermissionService(lf.CreateLogger<PermissionService>(), dataDir);
         var plugins = new PluginManager(lf.CreateLogger<PluginManager>(), dataDir);
-        var broker = new DeviceBroker(lf.CreateLogger<DeviceBroker>(), perms, plugins);
+        var bluetooth = new BluetoothService(lf.CreateLogger<BluetoothService>());
+        var broker = new DeviceBroker(lf.CreateLogger<DeviceBroker>(), perms, plugins, bluetooth);
         var storage = new StorageService(dataDir);
         var appHub = new AppHub(lf.CreateLogger<AppHub>());
 
@@ -48,6 +49,17 @@ public static class Program
         foreach (var id in plugins.PluginIds())
             if (plugins.ApplyPendingIfAny(id)) log.LogInformation("已应用 {Plugin} 的待定更新", id);
 
+        // —— 蓝牙设备：等首轮配对设备枚举完，插件启动时才能接管已授权的 AirPods；
+        //    之后配对/连接变化（合并 0.5s 内的连续事件）通知 UI，并让插件接管新出现的已授权设备 ——
+        bluetooth.Start();
+        await bluetooth.WaitReadyAsync(TimeSpan.FromSeconds(3));
+        using var btDebounce = new Timer(_ =>
+        {
+            appHub.DevicesChanged(broker.Enumerate());
+            _ = supervisor.SyncDevicesAsync();
+        });
+        bluetooth.Changed += () => btDebounce.Change(500, Timeout.Infinite);
+
         // 启动已安装且未禁用的插件
         foreach (var id in plugins.PluginIds())
             _ = supervisor.StartAsync(id);
@@ -61,6 +73,7 @@ public static class Program
         log.LogInformation("正在停止…");
         supervisor.Dispose();
         broker.Dispose();
+        bluetooth.Dispose();
     }
 
     private static async Task AcceptAppConnectionsAsync(AppHub appHub, AgentApiService agentApi,

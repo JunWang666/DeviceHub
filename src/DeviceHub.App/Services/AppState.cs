@@ -24,6 +24,8 @@ public sealed class AppState
     {
         Client.PluginStateChanged += p => OnUi(() => Upsert(Plugins, p, x => x.Id == p.Id));
         Client.PermissionRequested += r => OnUi(() => PermissionRequested?.Invoke(r));
+        // 推送里是未经插件修饰的原始列表，重新拉一次带名称/归属的完整列表（如 AirPods 连上/断开）。
+        Client.DevicesChanged += _ => { var t = RefreshAsync(); };
     }
 
     public async Task InitializeAsync()

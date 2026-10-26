@@ -160,3 +160,20 @@ src\DeviceHub.App\bin\x64\Debug\net10.0-windows10.0.26100.0\win-x64\DeviceHub.Ap
 - GK65 插件在 `plugin.json` 声明 `1a2c:7fff` + `config` 通道（mi_02 / 0xFF01），接收器插入后显示为「GK65 三模键盘」。
 - 协议与真机写入验证见上文「GK65 真机协议」。
 ```
+
+## AirPods 插件（2026-10-26）
+参考 AirPodsDesktop（BLE 广播解析）、PodBridge（连接门控、入耳位修正、AAP 降噪）、NTPods（AAP 命令表与推送解析）。
+- **蓝牙总线**：Agent 新增 `BluetoothService`（Agent TFM 改为 `net10.0-windows10.0.26100.0` 以使用 WinRT 蓝牙）。
+  监视已配对设备，取蓝牙 Device ID 的 VendorId = 0x004C（Apple）者，`DeviceKey` 形如 `bt:004c:<型号>:<蓝牙地址>`，
+  `DeviceBus.Bluetooth`；配对/连接变化时通知 UI，并让运行中的插件接管新出现的已授权设备（`SyncDevicesAsync`）。
+- **两个通道**（`HidChannelInfo.Kind`，manifest 里用 `kind` 声明）：
+  - `continuity`：核心按需开 BLE 扫描，只把「型号相符 + 该设备已连接」的 Apple 接近配对包（27 字节）交给插件，
+    并清零末尾 16 字节加密段；`ReadInputAsync` 返回一条广播（带 `Rssi`）。免驱动。
+  - `aap`（manifest 中 `optional: true`）：经第三方 L2CAP 驱动（NTPodsAAP 或 PodBridgeAAP，均为测试签名）连 PSM 0x1001，
+    `WriteOutputAsync` 发一帧、`ReadInputAsync` 收一帧。没装驱动时设备上没有这个通道，插件访问得到「未安装 AAP 驱动」。
+- **插件**：`plugins/DeviceHub.Plugin.AirPods(.Ui)`。电量 / 充电 / 入耳 / 开盖来自广播（10% 精度），左右耳广播按侧合并；
+  有 AAP 通道时握手 → 解锁功能 → 订阅推送，电量改用 AAP（1%），并提供聆听模式（关闭/降噪/通透/自适应，按型号限制）与对话感知。
+- **已验证**：整个解决方案编译通过；解析自测全部通过（PodBridge 的两组接近配对测试向量，含左右翻转、入耳异或、
+  0xF 未知哨兵；AAP 控制帧/订阅帧字节、电量推送与回显解析）；本机（无蓝牙适配器）Agent 启动正常、两个插件后端都启动；
+  App 自检（现会逐个加载所有插件的 XAML）中 `AirPodsPage` 动态加载成功。
+- **未验证**：本机没有蓝牙硬件，真机 AirPods 的枚举、广播接收、AAP 驱动收发都还没跑过；两种驱动的 IOCTL 按各自源码实现，未实测。

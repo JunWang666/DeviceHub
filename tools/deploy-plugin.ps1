@@ -41,5 +41,7 @@ function Deploy-One($backendProj, $uiProj, $version = $null, $displaySuffix = $n
 
 # GK65 driver plugin
 Deploy-One "DeviceHub.Plugin.Gk65" "DeviceHub.Plugin.Gk65.Ui" | Out-Null
+# AirPods plugin
+Deploy-One "DeviceHub.Plugin.AirPods" "DeviceHub.Plugin.AirPods.Ui" | Out-Null
 
 Write-Host "done. plugin store: $data\plugins"

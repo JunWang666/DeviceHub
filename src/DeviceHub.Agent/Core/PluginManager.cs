@@ -37,10 +37,19 @@ public sealed class DeviceMatch
     public List<ChannelMatch> Channels { get; set; } = new();
 }
 
-/// <summary>按接口号与 Usage 描述一个 HID 集合，并给它起个角色名供插件引用。</summary>
+/// <summary>
+/// 描述插件要用的一个通道并给它起个角色名供插件引用：HID 集合按接口号与 Usage 匹配；
+/// 蓝牙设备按种类（continuity / aap）匹配。
+/// </summary>
 public sealed class ChannelMatch
 {
     public string Role { get; set; } = "";
+    /// <summary>通道种类，见 <see cref="ChannelKinds"/>；默认 hid。</summary>
+    public string Kind { get; set; } = ChannelKinds.Hid;
+    /// <summary>可选通道：设备没有它也算匹配（如 aap 只在装了驱动时才有），插件访问时返回 AccessDenied。</summary>
+    public bool Optional { get; set; }
+    /// <summary>aap 通道允许连接的 L2CAP PSM；核心只连插件声明的 PSM。</summary>
+    [JsonConverter(typeof(HexUShortConverter))] public ushort Psm { get; set; } = 0x1001;
     /// <summary>-1 = 任意；否则匹配 USB 接口号（mi_XX）。</summary>
     public int Interface { get; set; } = -1;
     /// <summary>0 = 任意。</summary>
@@ -49,6 +58,7 @@ public sealed class ChannelMatch
     [JsonConverter(typeof(HexUShortConverter))] public ushort Usage { get; set; }
 
     public bool Matches(HidChannelInfo c) =>
+        string.Equals(Kind, c.Kind, StringComparison.OrdinalIgnoreCase) &&
         (Interface < 0 || Interface == c.Interface) &&
         (UsagePage == 0 || UsagePage == c.UsagePage) &&
         (Usage == 0 || Usage == c.Usage);
@@ -148,20 +158,24 @@ public sealed class PluginManager
             string.Equals(d.Bus, device.Bus.ToString(), StringComparison.OrdinalIgnoreCase) &&
             (d.Vid == 0 || d.Vid == device.Vid) &&
             (d.Pid.Count == 0 || d.Pid.Contains(device.Pid)) &&
-            d.Channels.All(c => device.Channels.Any(c.Matches)));
+            d.Channels.Where(c => !c.Optional).All(c => device.Channels.Any(c.Matches)));
     }
 
     /// <summary>
-    /// 把插件请求的通道角色（null = 默认，即声明的第一个）解析为设备上的实际 HID 集合。
+    /// 把插件请求的通道角色（null = 默认，即声明的第一个）解析为设备上的实际通道。
     /// 未声明的角色返回 null —— 插件碰不到自己没声明的通道。
     /// </summary>
-    public HidChannelInfo? ResolveChannel(string pluginId, DeviceInfo device, string? role)
+    public HidChannelInfo? ResolveChannel(string pluginId, DeviceInfo device, string? role) =>
+        ResolveChannelSpec(pluginId, device, role).Channel;
+
+    /// <summary>同 <see cref="ResolveChannel"/>，并返回插件的声明（aap 通道要用其中的 PSM）。</summary>
+    public (HidChannelInfo? Channel, ChannelMatch? Spec) ResolveChannelSpec(string pluginId, DeviceInfo device, string? role)
     {
         var match = MatchDevice(pluginId, device);
         var spec = role is null
             ? match?.Channels.FirstOrDefault()
             : match?.Channels.FirstOrDefault(c => string.Equals(c.Role, role, StringComparison.OrdinalIgnoreCase));
-        return spec is null ? null : device.Channels.FirstOrDefault(spec.Matches);
+        return spec is null ? (null, null) : (device.Channels.FirstOrDefault(spec.Matches), spec);
     }
 
     public sealed record InstallResult(string Id, string Version, bool Activated);

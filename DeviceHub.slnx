@@ -1,5 +1,11 @@
 <Solution>
   <Folder Name="/plugins/">
+    <Project Path="plugins/DeviceHub.Plugin.AirPods.Ui/DeviceHub.Plugin.AirPods.Ui.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="plugins/DeviceHub.Plugin.AirPods/DeviceHub.Plugin.AirPods.csproj">
+      <Platform Project="x64" />
+    </Project>
     <Project Path="plugins/DeviceHub.Plugin.Gk65.Ui/DeviceHub.Plugin.Gk65.Ui.csproj">
       <Platform Project="x64" />
     </Project>

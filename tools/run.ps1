@@ -11,7 +11,7 @@ if ($LASTEXITCODE -ne 0) { throw "build failed" }
 Write-Host "Deploying plugin..." -ForegroundColor Cyan
 & (Join-Path $PSScriptRoot "deploy-plugin.ps1") -Config $Config
 
-$agent = Join-Path $repo "src\DeviceHub.Agent\bin\x64\$Config\net10.0-windows\win-x64\DeviceHub.Agent.exe"
+$agent = Join-Path $repo "src\DeviceHub.Agent\bin\x64\$Config\net10.0-windows10.0.26100.0\win-x64\DeviceHub.Agent.exe"
 $app   = Join-Path $repo "src\DeviceHub.App\bin\x64\$Config\net10.0-windows10.0.26100.0\win-x64\DeviceHub.App.exe"
 
 Get-Process DeviceHub.Agent, DeviceHub.PluginHost, DeviceHub.App -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue

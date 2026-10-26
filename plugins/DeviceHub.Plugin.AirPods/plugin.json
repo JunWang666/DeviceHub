@@ -1,0 +1,23 @@
+{
+  "id": "com.devicehub.airpods",
+  "displayName": "AirPods",
+  "version": "1.0.0",
+  "sdkVersion": "1.0",
+  "backendAssembly": "backend/DeviceHub.Plugin.AirPods.dll",
+  "backendType": "DeviceHub.Plugin.AirPods.AirPodsPlugin",
+  "uiAssembly": "ui/DeviceHub.Plugin.AirPods.Ui.dll",
+  "uiPageType": "DeviceHub.Plugin.AirPods.Ui.AirPodsPageEntry",
+  "devices": [
+    {
+      "name": "AirPods",
+      "bus": "Bluetooth",
+      "vid": "0x004c",
+      "pid": [],
+      "channels": [
+        { "role": "status", "kind": "continuity" },
+        { "role": "aap", "kind": "aap", "psm": "0x1001", "optional": true }
+      ]
+    }
+  ],
+  "permissions": ["devices"]
+}

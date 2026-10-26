@@ -34,6 +34,7 @@ public static class Fmt
     public static string Bus(DeviceInfo d) => d.Bus switch
     {
         DeviceBus.Hid => $"USB HID · {d.Vid:X4}:{d.Pid:X4}",
+        DeviceBus.Bluetooth => $"蓝牙 · {(d.Connected ? "已连接" : "未连接")}",
         _ => $"{d.Bus} · {d.Vid:X4}:{d.Pid:X4}",
     };
 
@@ -53,7 +54,7 @@ public sealed class NewDeviceRow
 {
     public required DeviceInfo Device { get; init; }
     public string Title => Device.DisplayName;
-    public string Description => Device.Channels.Count > 0
+    public string Description => Device.Channels.Count > 0 && Device.Bus == DeviceBus.Hid
         ? $"{Fmt.Bus(Device)} · {Device.Channels.Count} 个 HID 通道"
         : Fmt.Bus(Device);
 }
