@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="DeviceHub.Plugin.GameSir.Ui.GameSirPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:DeviceHub.Plugin.GameSir.Ui"
+    xmlns:tk="using:CommunityToolkit.WinUI.Controls">
+
+    <UserControl.Resources>
+        <!-- 设置卡片之间 4px、分组之间 30px（WinUI 设置页规范） -->
+        <x:Double x:Key="CardSpacing">4</x:Double>
+        <Style x:Key="GroupHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+            <Setter Property="Margin" Value="1,30,0,6"/>
+        </Style>
+        <Style x:Key="TileStyle" TargetType="Border">
+            <Setter Property="Padding" Value="16,14"/>
+            <Setter Property="MinWidth" Value="180"/>
+            <Setter Property="CornerRadius" Value="{StaticResource OverlayCornerRadius}"/>
+            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}"/>
+            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer>
+        <StackPanel Spacing="{StaticResource CardSpacing}" Margin="0,0,0,36">
+            <InfoBar IsOpen="{x:Bind Vm.ShowUnauthorized, Mode=OneWay}" Severity="Warning" IsClosable="False"
+                     Title="未授权" Message="插件尚未获得此设备的访问授权。" Margin="0,0,0,8"/>
+
+            <!-- 概览 -->
+            <Grid Margin="1,0,0,10" ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <FontIcon Glyph="&#xE7FC;" FontSize="28" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1">
+                    <TextBlock Text="{x:Bind Vm.ModelName, Mode=OneWay}" Style="{StaticResource SubtitleTextBlockStyle}"/>
+                    <TextBlock Text="{x:Bind Vm.ConnectionText, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                </StackPanel>
+                <Button Grid.Column="2" VerticalAlignment="Center" Click="Refresh_Click">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE72C;" FontSize="14"/>
+                        <TextBlock Text="重新读取"/>
+                    </StackPanel>
+                </Button>
+            </Grid>
+
+            <Border Style="{StaticResource TileStyle}" HorizontalAlignment="Left">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="电量" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="{x:Bind Vm.BatteryGlyph, Mode=OneWay}" FontSize="22"/>
+                        <TextBlock Text="{x:Bind Vm.BatteryText, Mode=OneWay}" Style="{StaticResource SubtitleTextBlockStyle}"/>
+                    </StackPanel>
+                    <ProgressBar Value="{x:Bind Vm.BatteryValue, Mode=OneWay}" Maximum="100" Visibility="{x:Bind Vm.BatteryKnown, Mode=OneWay}"/>
+                </StackPanel>
+            </Border>
+            <TextBlock Text="{x:Bind Vm.InfoText, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="1,6,0,0"/>
+
+            <!-- 震动 -->
+            <TextBlock Text="震动" Style="{StaticResource GroupHeaderStyle}"/>
+            <tk:SettingsExpander Header="震动强度" Description="{x:Bind Vm.VibrationDescription, Mode=OneWay}" IsExpanded="True">
+                <tk:SettingsExpander.HeaderIcon><FontIcon Glyph="&#xE877;"/></tk:SettingsExpander.HeaderIcon>
+                <tk:SettingsExpander.Items>
+                    <tk:SettingsCard Header="左马达">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock Text="{x:Bind Vm.VibrationLeftText, Mode=OneWay}" VerticalAlignment="Center" MinWidth="32"/>
+                            <Slider Width="200" Minimum="0" Maximum="4" StepFrequency="1" TickFrequency="1" TickPlacement="Outside"
+                                    Value="{x:Bind Vm.VibrationLeft, Mode=TwoWay}" IsEnabled="{x:Bind Vm.VibrationEditable, Mode=OneWay}"/>
+                        </StackPanel>
+                    </tk:SettingsCard>
+                    <tk:SettingsCard Header="右马达">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock Text="{x:Bind Vm.VibrationRightText, Mode=OneWay}" VerticalAlignment="Center" MinWidth="32"/>
+                            <Slider Width="200" Minimum="0" Maximum="4" StepFrequency="1" TickFrequency="1" TickPlacement="Outside"
+                                    Value="{x:Bind Vm.VibrationRight, Mode=TwoWay}" IsEnabled="{x:Bind Vm.VibrationEditable, Mode=OneWay}"/>
+                        </StackPanel>
+                    </tk:SettingsCard>
+                </tk:SettingsExpander.Items>
+            </tk:SettingsExpander>
+
+            <!-- 电源 -->
+            <TextBlock Text="电源" Style="{StaticResource GroupHeaderStyle}"/>
+            <tk:SettingsCard Header="自动休眠" Description="{x:Bind Vm.SleepDescription, Mode=OneWay}">
+                <tk:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE708;"/></tk:SettingsCard.HeaderIcon>
+                <ToggleSwitch OnContent="开" OffContent="关" MinWidth="0"
+                              IsOn="{x:Bind Vm.AutoSleep, Mode=TwoWay}" IsEnabled="{x:Bind Vm.SleepEditable, Mode=OneWay}"/>
+            </tk:SettingsCard>
+
+            <!-- 死区（只读） -->
+            <TextBlock Text="死区" Style="{StaticResource GroupHeaderStyle}"/>
+            <tk:SettingsCard Header="L2 扳机" Description="起始 – 结束行程">
+                <tk:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7FC;"/></tk:SettingsCard.HeaderIcon>
+                <TextBlock Text="{x:Bind Vm.L2Text, Mode=OneWay}"/>
+            </tk:SettingsCard>
+            <tk:SettingsCard Header="R2 扳机" Description="起始 – 结束行程">
+                <tk:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7FC;"/></tk:SettingsCard.HeaderIcon>
+                <TextBlock Text="{x:Bind Vm.R2Text, Mode=OneWay}"/>
+            </tk:SettingsCard>
+            <tk:SettingsCard Header="左摇杆" Description="中心死区">
+                <tk:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7FC;"/></tk:SettingsCard.HeaderIcon>
+                <TextBlock Text="{x:Bind Vm.LeftStickText, Mode=OneWay}"/>
+            </tk:SettingsCard>
+            <tk:SettingsCard Header="右摇杆" Description="中心死区">
+                <tk:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE7FC;"/></tk:SettingsCard.HeaderIcon>
+                <TextBlock Text="{x:Bind Vm.RightStickText, Mode=OneWay}"/>
+            </tk:SettingsCard>
+
+            <TextBlock Text="{x:Bind Vm.Status, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="1,8,0,0"/>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
