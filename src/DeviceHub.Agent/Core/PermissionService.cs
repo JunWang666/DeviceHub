@@ -1,0 +1,149 @@
+using System.Collections.Concurrent;
+using System.Text.Json;
+using DeviceHub.Contracts;
+using Microsoft.Extensions.Logging;
+
+namespace DeviceHub.Agent.Core;
+
+/// <summary>
+/// 授权中心：插件访问设备必须先获得用户允许。授权记录由核心持久化，插件无法改写。
+/// </summary>
+public sealed class PermissionService
+{
+    private readonly ILogger<PermissionService> _log;
+    private readonly string _file;
+    private readonly ConcurrentDictionary<string, AccessScope> _grants = new(); // key: pluginId|deviceKey
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _grantedAt = new(); // 同 key：接入时间
+    private readonly ConcurrentDictionary<string, TaskCompletionSource<AccessScope>> _pending = new();
+
+    /// <summary>需要弹窗征求用户同意。</summary>
+    public event Action<PermissionRequest>? RequestRaised;
+    /// <summary>授权被撤销，Broker 应立即关闭句柄。</summary>
+    public event Action<string, string>? GrantRevoked; // pluginId, deviceKey
+
+    public PermissionService(ILogger<PermissionService> log, string dataDir)
+    {
+        _log = log;
+        _file = Path.Combine(dataDir, "grants.json");
+        Load();
+    }
+
+    private static string K(string pluginId, string deviceKey) => $"{pluginId}|{deviceKey}";
+
+    public AccessScope GetGrant(string pluginId, string deviceKey) =>
+        _grants.TryGetValue(K(pluginId, deviceKey), out var s) ? s : AccessScope.Denied;
+
+    public IEnumerable<(string PluginId, string DeviceKey, AccessScope Scope, DateTimeOffset? GrantedAt)> AllGrants() =>
+        _grants.Select(kv =>
+        {
+            var p = kv.Key.Split('|', 2);
+            return (p[0], p[1], kv.Value, _grantedAt.TryGetValue(kv.Key, out var t) ? t : (DateTimeOffset?)null);
+        });
+
+    /// <summary>申请访问。Always 直接通过；否则弹窗等待用户。</summary>
+    public async Task<AccessScope> RequestAsync(PluginInfo plugin, DeviceInfo device, string reason)
+    {
+        var existing = GetGrant(plugin.Id, device.DeviceKey);
+        if (existing == AccessScope.Always) return existing;
+
+        var requestId = Guid.NewGuid().ToString("N");
+        var tcs = new TaskCompletionSource<AccessScope>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pending[requestId] = tcs;
+
+        var req = new PermissionRequest
+        {
+            RequestId = requestId,
+            PluginId = plugin.Id,
+            PluginDisplayName = plugin.DisplayName,
+            Device = device,
+            Reason = reason,
+        };
+        _log.LogInformation("授权请求 {Plugin} → {Device}: {Reason}", plugin.Id, device.DeviceKey, reason);
+
+        if (RequestRaised is null)
+        {
+            _pending.TryRemove(requestId, out _);
+            return AccessScope.Denied; // 无 UI 可征询
+        }
+        RequestRaised.Invoke(req);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await using (cts.Token.Register(() => tcs.TrySetResult(AccessScope.Denied)))
+        {
+            var scope = await tcs.Task.ConfigureAwait(false);
+            _pending.TryRemove(requestId, out _);
+            if (scope is AccessScope.Always or AccessScope.Denied)
+            {
+                _grants[K(plugin.Id, device.DeviceKey)] = scope;
+                _grantedAt[K(plugin.Id, device.DeviceKey)] = DateTimeOffset.Now;
+                Save();
+            }
+            else if (scope == AccessScope.Once)
+            {
+                _grants[K(plugin.Id, device.DeviceKey)] = AccessScope.Once; // 仅本会话内存态
+            }
+            return scope;
+        }
+    }
+
+    /// <summary>直接授予授权（用户在"新设备"页显式点击授权时调用）。</summary>
+    public void Grant(string pluginId, string deviceKey, AccessScope scope)
+    {
+        _grants[K(pluginId, deviceKey)] = scope;
+        _grantedAt[K(pluginId, deviceKey)] = DateTimeOffset.Now;
+        if (scope == AccessScope.Always) Save();
+        _log.LogInformation("授予 {Plugin} → {Device}: {Scope}", pluginId, deviceKey, scope);
+    }
+
+    public void Respond(string requestId, AccessScope scope)
+    {
+        if (_pending.TryGetValue(requestId, out var tcs)) tcs.TrySetResult(scope);
+    }
+
+    public void Revoke(string pluginId, string deviceKey)
+    {
+        if (_grants.TryRemove(K(pluginId, deviceKey), out _))
+        {
+            _grantedAt.TryRemove(K(pluginId, deviceKey), out _);
+            Save();
+            _log.LogInformation("撤销授权 {Plugin} → {Device}", pluginId, deviceKey);
+            GrantRevoked?.Invoke(pluginId, deviceKey);
+        }
+    }
+
+    private void Load()
+    {
+        try
+        {
+            if (!File.Exists(_file)) return;
+            var map = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(File.ReadAllText(_file));
+            if (map is null) return;
+            foreach (var (key, v) in map)
+            {
+                // 新格式 {"scope":2,"grantedAt":"…"}；旧格式直接是数字 scope，接入时间取文件修改时间作近似。
+                var rec = v.ValueKind == JsonValueKind.Number
+                    ? new GrantRecord((AccessScope)v.GetInt32(), new DateTimeOffset(File.GetLastWriteTime(_file)))
+                    : v.Deserialize<GrantRecord>(Json);
+                if (rec is null || rec.Scope != AccessScope.Always) continue; // 只持久化 Always
+                _grants[key] = rec.Scope;
+                if (rec.GrantedAt is { } t) _grantedAt[key] = t;
+            }
+        }
+        catch (Exception ex) { _log.LogWarning(ex, "读取授权失败"); }
+    }
+
+    private void Save()
+    {
+        try
+        {
+            var persist = _grants.Where(kv => kv.Value == AccessScope.Always)
+                                  .ToDictionary(kv => kv.Key,
+                                      kv => new GrantRecord(kv.Value, _grantedAt.TryGetValue(kv.Key, out var t) ? t : null));
+            File.WriteAllText(_file, JsonSerializer.Serialize(persist, Json));
+        }
+        catch (Exception ex) { _log.LogWarning(ex, "保存授权失败"); }
+    }
+
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private sealed record GrantRecord(AccessScope Scope, DateTimeOffset? GrantedAt);
+}

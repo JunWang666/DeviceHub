@@ -1,0 +1,320 @@
+using System.IO.Compression;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using DeviceHub.Contracts;
+using Microsoft.Extensions.Logging;
+
+namespace DeviceHub.Agent.Core;
+
+public sealed class PluginManifest
+{
+    public string Id { get; set; } = "";
+    public string DisplayName { get; set; } = "";
+    public string Version { get; set; } = "";
+    public string SdkVersion { get; set; } = "1.0";
+    public string BackendAssembly { get; set; } = "";
+    public string BackendType { get; set; } = "";
+    public string? UiAssembly { get; set; }
+    public string? UiPageType { get; set; }
+    public List<DeviceMatch> Devices { get; set; } = new();
+    public List<string> Permissions { get; set; } = new();
+}
+
+/// <summary>
+/// 插件在自己的 plugin.json 里声明适配的设备：总线 + VID/PID，以及它要用的 HID 通道。
+/// 物理设备必须具备全部声明的通道才算匹配；插件 I/O 只能落到声明过的通道上（最小权限）。
+/// </summary>
+public sealed class DeviceMatch
+{
+    public string Bus { get; set; } = "";
+    /// <summary>匹配成功时给设备显示的友好名称（替代 "2.4G Wireless Device" 这类产品串）。</summary>
+    public string? Name { get; set; }
+    /// <summary>0 = 任意。</summary>
+    [JsonConverter(typeof(HexUShortConverter))] public ushort Vid { get; set; }
+    /// <summary>空 = 任意。可写单个值或数组（同一型号常有多个 PID，如有线/接收器）。</summary>
+    [JsonConverter(typeof(HexUShortListConverter))] public List<ushort> Pid { get; set; } = new();
+    /// <summary>需要的通道，第一个为默认通道。HID 设备未声明通道时插件无法做任何 I/O。</summary>
+    public List<ChannelMatch> Channels { get; set; } = new();
+}
+
+/// <summary>按接口号与 Usage 描述一个 HID 集合，并给它起个角色名供插件引用。</summary>
+public sealed class ChannelMatch
+{
+    public string Role { get; set; } = "";
+    /// <summary>-1 = 任意；否则匹配 USB 接口号（mi_XX）。</summary>
+    public int Interface { get; set; } = -1;
+    /// <summary>0 = 任意。</summary>
+    [JsonConverter(typeof(HexUShortConverter))] public ushort UsagePage { get; set; }
+    /// <summary>0 = 任意。</summary>
+    [JsonConverter(typeof(HexUShortConverter))] public ushort Usage { get; set; }
+
+    public bool Matches(HidChannelInfo c) =>
+        (Interface < 0 || Interface == c.Interface) &&
+        (UsagePage == 0 || UsagePage == c.UsagePage) &&
+        (Usage == 0 || Usage == c.Usage);
+}
+
+/// <summary>每插件的版本指针。</summary>
+public sealed class PluginState
+{
+    public string Active { get; set; } = "";
+    public string? Pending { get; set; }
+    public string? Previous { get; set; }
+    public bool Disabled { get; set; }
+}
+
+/// <summary>
+/// 插件仓库管理：扫描、版本指针、暂存更新与回滚。
+/// 目录布局：plugins/{id}/{version}/（含 manifest.json），plugins/{id}/state.json。
+/// </summary>
+public sealed class PluginManager
+{
+    private readonly ILogger<PluginManager> _log;
+    private static readonly JsonSerializerOptions CaseInsensitive = new() { PropertyNameCaseInsensitive = true };
+    public string Root { get; }
+
+    public PluginManager(ILogger<PluginManager> log, string dataDir)
+    {
+        _log = log;
+        Root = Path.Combine(dataDir, "plugins");
+        Directory.CreateDirectory(Root);
+    }
+
+    public IEnumerable<string> PluginIds() =>
+        Directory.Exists(Root)
+            ? Directory.GetDirectories(Root).Select(Path.GetFileName).Where(n => n is not null && !n.StartsWith('.'))!
+            : Enumerable.Empty<string>();
+
+    public PluginState LoadState(string pluginId)
+    {
+        var f = Path.Combine(Root, pluginId, "state.json");
+        if (File.Exists(f))
+            try { return JsonSerializer.Deserialize<PluginState>(File.ReadAllText(f), CaseInsensitive) ?? Infer(pluginId); }
+            catch { }
+        return Infer(pluginId);
+    }
+
+    private PluginState Infer(string pluginId)
+    {
+        var versions = VersionDirs(pluginId);
+        var st = new PluginState { Active = versions.LastOrDefault() ?? "" };
+        if (st.Active.Length > 0) SaveState(pluginId, st);
+        return st;
+    }
+
+    public void SaveState(string pluginId, PluginState st) =>
+        File.WriteAllText(Path.Combine(Root, pluginId, "state.json"), JsonSerializer.Serialize(st));
+
+    private List<string> VersionDirs(string pluginId)
+    {
+        var dir = Path.Combine(Root, pluginId);
+        if (!Directory.Exists(dir)) return new();
+        return Directory.GetDirectories(dir).Select(Path.GetFileName)!
+            .Where(n => n != null).OrderBy(n => n, StringComparer.Ordinal).ToList()!;
+    }
+
+    public string ActiveVersionDir(string pluginId)
+    {
+        var st = LoadState(pluginId);
+        return Path.Combine(Root, pluginId, st.Active);
+    }
+
+    public PluginManifest? ReadManifest(string versionDir)
+    {
+        var f = Path.Combine(versionDir, "manifest.json");
+        if (!File.Exists(f)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<PluginManifest>(File.ReadAllText(f), CaseInsensitive);
+        }
+        catch (Exception ex) { _log.LogWarning(ex, "解析 manifest 失败 {Dir}", versionDir); return null; }
+    }
+
+    public PluginManifest? ActiveManifest(string pluginId) => ReadManifest(ActiveVersionDir(pluginId));
+
+    /// <summary>设备匹配：返回可接管此设备的插件 Id（第一个）。</summary>
+    public string? MatchPlugin(DeviceInfo device) => MatchPlugins(device).FirstOrDefault();
+
+    /// <summary>设备匹配：返回所有候选插件 Id（供"建议插件"列表）。</summary>
+    public IReadOnlyList<string> MatchPlugins(DeviceInfo device) =>
+        PluginIds().Where(id => MatchDevice(id, device) is not null).ToList();
+
+    /// <summary>插件 manifest 中第一条匹配此设备的声明；插件被禁用或不适配时为 null。</summary>
+    public DeviceMatch? MatchDevice(string pluginId, DeviceInfo device)
+    {
+        var m = ActiveManifest(pluginId);
+        if (m is null || LoadState(pluginId).Disabled) return null;
+        return m.Devices.FirstOrDefault(d =>
+            string.Equals(d.Bus, device.Bus.ToString(), StringComparison.OrdinalIgnoreCase) &&
+            (d.Vid == 0 || d.Vid == device.Vid) &&
+            (d.Pid.Count == 0 || d.Pid.Contains(device.Pid)) &&
+            d.Channels.All(c => device.Channels.Any(c.Matches)));
+    }
+
+    /// <summary>
+    /// 把插件请求的通道角色（null = 默认，即声明的第一个）解析为设备上的实际 HID 集合。
+    /// 未声明的角色返回 null —— 插件碰不到自己没声明的通道。
+    /// </summary>
+    public HidChannelInfo? ResolveChannel(string pluginId, DeviceInfo device, string? role)
+    {
+        var match = MatchDevice(pluginId, device);
+        var spec = role is null
+            ? match?.Channels.FirstOrDefault()
+            : match?.Channels.FirstOrDefault(c => string.Equals(c.Role, role, StringComparison.OrdinalIgnoreCase));
+        return spec is null ? null : device.Channels.FirstOrDefault(spec.Matches);
+    }
+
+    public sealed record InstallResult(string Id, string Version, bool Activated);
+
+    /// <summary>
+    /// 安装插件包（.dhplugin = zip：manifest.json + backend/ + ui/）。
+    /// 未安装过的插件直接设为 active；已有版本时设为 pending，由 <see cref="ApplyPendingIfAny"/> 切换。
+    /// </summary>
+    public InstallResult InstallPackage(string packagePath)
+    {
+        var tmp = Path.Combine(Root, ".incoming", Guid.NewGuid().ToString("N"));
+        try
+        {
+            ZipFile.ExtractToDirectory(packagePath, tmp);
+            var manifest = ReadManifest(tmp) ?? throw new InvalidOperationException("包内缺少 manifest.json");
+            if (string.IsNullOrWhiteSpace(manifest.Id) || string.IsNullOrWhiteSpace(manifest.Version)
+                || manifest.Id.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || manifest.Version.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                throw new InvalidOperationException("manifest 的 id/version 无效");
+
+            var target = Path.Combine(Root, manifest.Id, manifest.Version);
+            if (Directory.Exists(target)) Directory.Delete(target, true);
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            Directory.Move(tmp, target);
+
+            var st = File.Exists(Path.Combine(Root, manifest.Id, "state.json")) ? LoadState(manifest.Id) : new PluginState();
+            bool activate = string.IsNullOrEmpty(st.Active) || !Directory.Exists(Path.Combine(Root, manifest.Id, st.Active));
+            if (activate) { st.Active = manifest.Version; st.Pending = null; }
+            else if (st.Active != manifest.Version) st.Pending = manifest.Version;
+            st.Disabled = false;
+            SaveState(manifest.Id, st);
+            _log.LogInformation("已安装插件包 {Plugin} v{Ver}（{Mode}）", manifest.Id, manifest.Version, activate ? "立即启用" : "重启后生效");
+            return new InstallResult(manifest.Id, manifest.Version, activate);
+        }
+        finally { try { if (Directory.Exists(tmp)) Directory.Delete(tmp, true); } catch { } }
+    }
+
+    /// <summary>
+    /// 安装随程序附带的插件（{exe 目录}\plugins\*.dhplugin）：未安装或附带版本更新时才安装。
+    /// 在 Agent 启动、插件启动之前调用。
+    /// </summary>
+    public void InstallBundled(string bundleDir)
+    {
+        if (!Directory.Exists(bundleDir)) return;
+        foreach (var pkg in Directory.GetFiles(bundleDir, "*.dhplugin"))
+        {
+            try
+            {
+                using var zip = ZipFile.OpenRead(pkg);
+                var entry = zip.GetEntry("manifest.json") ?? throw new InvalidOperationException("缺少 manifest.json");
+                using var s = entry.Open();
+                var m = JsonSerializer.Deserialize<PluginManifest>(s, CaseInsensitive) ?? throw new InvalidOperationException("manifest 无效");
+                var installed = File.Exists(Path.Combine(Root, m.Id, "state.json")) ? LoadState(m.Id).Active : null;
+                if (installed is not null && Directory.Exists(Path.Combine(Root, m.Id, installed))
+                    && CompareVersion(installed, m.Version) >= 0) continue;
+                var r = InstallPackage(pkg);
+                if (!r.Activated) ApplyPendingIfAny(r.Id); // Agent 正在启动，直接切到附带的新版本
+            }
+            catch (Exception ex) { _log.LogWarning(ex, "安装附带插件失败 {Pkg}", pkg); }
+        }
+    }
+
+    private static int CompareVersion(string a, string b) =>
+        Version.TryParse(a, out var va) && Version.TryParse(b, out var vb) ? va.CompareTo(vb) : string.CompareOrdinal(a, b);
+
+    /// <summary>暂存一个新版本（目录或 .dhplugin zip），等待重启生效。</summary>
+    public bool StageUpdate(string pluginId, string packagePath)
+    {
+        try
+        {
+            var tmp = Path.Combine(Root, pluginId, ".staging");
+            if (Directory.Exists(tmp)) Directory.Delete(tmp, true);
+            Directory.CreateDirectory(tmp);
+
+            if (Directory.Exists(packagePath)) CopyDir(packagePath, tmp);
+            else ZipFile.ExtractToDirectory(packagePath, tmp);
+
+            var manifest = ReadManifest(tmp) ?? throw new InvalidOperationException("包内缺少 manifest.json");
+            if (manifest.Id != pluginId) throw new InvalidOperationException($"包 Id 不匹配：{manifest.Id}");
+
+            var target = Path.Combine(Root, pluginId, manifest.Version);
+            if (Directory.Exists(target)) Directory.Delete(target, true);
+            Directory.Move(tmp, target);
+
+            var st = LoadState(pluginId);
+            st.Pending = manifest.Version;
+            SaveState(pluginId, st);
+            _log.LogInformation("已暂存 {Plugin} v{Ver}，待重启生效", pluginId, manifest.Version);
+            return true;
+        }
+        catch (Exception ex) { _log.LogError(ex, "暂存更新失败 {Plugin}", pluginId); return false; }
+    }
+
+    /// <summary>启动时调用：把 pending 提升为 active（旧版留作回滚点）。</summary>
+    public bool ApplyPendingIfAny(string pluginId)
+    {
+        var st = LoadState(pluginId);
+        if (string.IsNullOrEmpty(st.Pending)) return false;
+        st.Previous = st.Active;
+        st.Active = st.Pending;
+        st.Pending = null;
+        SaveState(pluginId, st);
+        _log.LogInformation("已应用更新 {Plugin} → v{Ver}", pluginId, st.Active);
+        return true;
+    }
+
+    /// <summary>回滚到上一个版本并禁用（安全模式下使用）。</summary>
+    public void Rollback(string pluginId, bool disable)
+    {
+        var st = LoadState(pluginId);
+        if (!string.IsNullOrEmpty(st.Previous)) { st.Active = st.Previous!; st.Previous = null; }
+        st.Disabled = disable;
+        SaveState(pluginId, st);
+        _log.LogWarning("已回滚 {Plugin} → v{Ver} (disabled={D})", pluginId, st.Active, disable);
+    }
+
+    private static void CopyDir(string src, string dst)
+    {
+        Directory.CreateDirectory(dst);
+        foreach (var f in Directory.GetFiles(src)) File.Copy(f, Path.Combine(dst, Path.GetFileName(f)), true);
+        foreach (var d in Directory.GetDirectories(src)) CopyDir(d, Path.Combine(dst, Path.GetFileName(d)));
+    }
+}
+
+/// <summary>支持 "0x1a2c" 十六进制或十进制的 ushort 转换。</summary>
+public sealed class HexUShortConverter : JsonConverter<ushort>
+{
+    public override ushort Read(ref Utf8JsonReader r, Type t, JsonSerializerOptions o)
+    {
+        if (r.TokenType == JsonTokenType.Number) return r.GetUInt16();
+        var s = r.GetString() ?? "0";
+        return s.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+            ? Convert.ToUInt16(s[2..], 16) : ushort.Parse(s);
+    }
+    public override void Write(Utf8JsonWriter w, ushort v, JsonSerializerOptions o) => w.WriteNumberValue(v);
+}
+
+/// <summary>接受单个值或数组，元素同 <see cref="HexUShortConverter"/>。</summary>
+public sealed class HexUShortListConverter : JsonConverter<List<ushort>>
+{
+    private static readonly HexUShortConverter One = new();
+
+    public override List<ushort> Read(ref Utf8JsonReader r, Type t, JsonSerializerOptions o)
+    {
+        if (r.TokenType != JsonTokenType.StartArray) return new() { One.Read(ref r, typeof(ushort), o) };
+        var list = new List<ushort>();
+        while (r.Read() && r.TokenType != JsonTokenType.EndArray) list.Add(One.Read(ref r, typeof(ushort), o));
+        return list;
+    }
+
+    public override void Write(Utf8JsonWriter w, List<ushort> v, JsonSerializerOptions o)
+    {
+        w.WriteStartArray();
+        foreach (var x in v) w.WriteNumberValue(x);
+        w.WriteEndArray();
+    }
+}

@@ -1,0 +1,26 @@
+<Solution>
+  <Folder Name="/plugins/">
+    <Project Path="plugins/DeviceHub.Plugin.Gk65.Ui/DeviceHub.Plugin.Gk65.Ui.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="plugins/DeviceHub.Plugin.Gk65/DeviceHub.Plugin.Gk65.csproj">
+      <Platform Project="x64" />
+    </Project>
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/DeviceHub.Agent/DeviceHub.Agent.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/DeviceHub.App/DeviceHub.App.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/DeviceHub.Contracts/DeviceHub.Contracts.csproj" />
+    <Project Path="src/DeviceHub.PluginHost/DeviceHub.PluginHost.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/DeviceHub.Sdk.Ui/DeviceHub.Sdk.Ui.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/DeviceHub.Sdk/DeviceHub.Sdk.csproj" />
+  </Folder>
+</Solution>

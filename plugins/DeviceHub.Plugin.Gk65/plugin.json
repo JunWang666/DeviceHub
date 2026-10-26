@@ -1,0 +1,22 @@
+{
+  "id": "com.devicehub.gk65",
+  "displayName": "GK65 驱动",
+  "version": "1.0.0",
+  "sdkVersion": "1.0",
+  "backendAssembly": "backend/DeviceHub.Plugin.Gk65.dll",
+  "backendType": "DeviceHub.Plugin.Gk65.Gk65Plugin",
+  "uiAssembly": "ui/DeviceHub.Plugin.Gk65.Ui.dll",
+  "uiPageType": "DeviceHub.Plugin.Gk65.Ui.Gk65PageEntry",
+  "devices": [
+    {
+      "name": "GK65 三模键盘",
+      "bus": "Hid",
+      "vid": "0x1a2c",
+      "pid": ["0x7fff"],
+      "channels": [
+        { "role": "config", "interface": 2, "usagePage": "0xff01", "usage": "0x01" }
+      ]
+    }
+  ],
+  "permissions": ["devices"]
+}

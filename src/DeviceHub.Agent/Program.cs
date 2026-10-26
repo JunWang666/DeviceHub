@@ -1,0 +1,105 @@
+using System.IO.Pipes;
+using DeviceHub.Agent.Core;
+using DeviceHub.Agent.Rpc;
+using DeviceHub.Contracts;
+using Microsoft.Extensions.Logging;
+
+namespace DeviceHub.Agent;
+
+public static class Program
+{
+    public static async Task Main(string[] args)
+    {
+        var dataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DeviceHub");
+        Directory.CreateDirectory(dataDir);
+
+        using var lf = LoggerFactory.Create(b => b
+            .AddSimpleConsole(o => { o.SingleLine = true; o.TimestampFormat = "HH:mm:ss "; })
+            .AddProvider(new FileLoggerProvider(Path.Combine(dataDir, "logs")))
+            .SetMinimumLevel(LogLevel.Information));
+        var log = lf.CreateLogger("Agent");
+        log.LogInformation("DeviceHub Agent 启动，数据目录 {Dir}", dataDir);
+
+        // 单实例
+        using var mutex = new Mutex(true, "DeviceHub.Agent.Singleton", out var isNew);
+        if (!isNew) { log.LogError("Agent 已在运行，退出"); return; }
+
+        var perms = new PermissionService(lf.CreateLogger<PermissionService>(), dataDir);
+        var plugins = new PluginManager(lf.CreateLogger<PluginManager>(), dataDir);
+        var broker = new DeviceBroker(lf.CreateLogger<DeviceBroker>(), perms, plugins);
+        var storage = new StorageService(dataDir);
+        var appHub = new AppHub(lf.CreateLogger<AppHub>());
+
+        perms.RequestRaised += appHub.PermissionRequested;
+
+        var hostExe = ResolveHostExe(log);
+        log.LogInformation("PluginHost 可执行文件：{Exe}", hostExe ?? "(未找到)");
+
+        var supervisor = new PluginSupervisor(lf.CreateLogger<PluginSupervisor>(), lf, plugins, broker, perms, storage, appHub, hostExe ?? "DeviceHub.PluginHost.exe");
+        var agentApi = new AgentApiService(broker, supervisor, perms, plugins, lf.CreateLogger("AgentApi"));
+
+        using var shutdown = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; shutdown.Cancel(); };
+
+        // —— 随程序附带的插件（安装包里的 plugins\*.dhplugin）：首次运行或附带版本更新时安装 ——
+        plugins.InstallBundled(Path.Combine(AppContext.BaseDirectory, "plugins"));
+
+        // —— 重启式更新生效点：把所有插件的 pending 版本提升为 active ——
+        foreach (var id in plugins.PluginIds())
+            if (plugins.ApplyPendingIfAny(id)) log.LogInformation("已应用 {Plugin} 的待定更新", id);
+
+        // 启动已安装且未禁用的插件
+        foreach (var id in plugins.PluginIds())
+            _ = supervisor.StartAsync(id);
+
+        // —— App 连接的管道服务器 ——
+        var pipeTask = AcceptAppConnectionsAsync(appHub, agentApi, lf, log, shutdown.Token);
+
+        log.LogInformation("Agent 就绪。Ctrl+C 退出。");
+        try { await Task.Delay(Timeout.Infinite, shutdown.Token); } catch (OperationCanceledException) { }
+
+        log.LogInformation("正在停止…");
+        supervisor.Dispose();
+        broker.Dispose();
+    }
+
+    private static async Task AcceptAppConnectionsAsync(AppHub appHub, AgentApiService agentApi,
+        ILoggerFactory lf, ILogger log, CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            var server = new NamedPipeServerStream("devicehub-agent", PipeDirection.InOut, 4,
+                PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+            try
+            {
+                await server.WaitForConnectionAsync(ct);
+                log.LogInformation("UI 已连接");
+                var (rpc, callback) = RpcFactory.CreateWithProxy<IAppCallback>(server, agentApi);
+                appHub.SetCallback(callback);
+                rpc.Disconnected += (_, _) => { appHub.ClearCallback(callback); log.LogInformation("UI 已断开"); try { server.Dispose(); } catch { } };
+                rpc.StartListening();
+            }
+            catch (OperationCanceledException) { server.Dispose(); break; }
+            catch (Exception ex) { log.LogWarning(ex, "接受 UI 连接失败"); server.Dispose(); await Task.Delay(500, ct); }
+        }
+    }
+
+    /// <summary>定位 PluginHost.exe：环境变量 → 同目录 → 向上找 sln 后在构建输出里取最新。</summary>
+    private static string? ResolveHostExe(ILogger log)
+    {
+        var env = Environment.GetEnvironmentVariable("DEVICEHUB_HOST_EXE");
+        if (!string.IsNullOrEmpty(env) && File.Exists(env)) return env;
+
+        var sibling = Path.Combine(AppContext.BaseDirectory, "DeviceHub.PluginHost.exe");
+        if (File.Exists(sibling)) return sibling;
+
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "DeviceHub.slnx"))
+                           && !File.Exists(Path.Combine(dir.FullName, "DeviceHub.sln"))) dir = dir.Parent;
+        if (dir == null) return null;
+
+        var candidates = Directory.GetFiles(Path.Combine(dir.FullName, "src", "DeviceHub.PluginHost"),
+            "DeviceHub.PluginHost.exe", SearchOption.AllDirectories);
+        return candidates.OrderByDescending(File.GetLastWriteTimeUtc).FirstOrDefault();
+    }
+}

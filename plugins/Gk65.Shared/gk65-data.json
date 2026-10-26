@@ -1,0 +1,40 @@
+{
+  "device": { "vid": "0x1A2C", "pid": "0x7FFF", "interface": 2, "usagePage": "0xFF01", "reportId": 0, "reportLength": 65 },
+  "profiles": ["P1", "P2", "P3"],
+  "areas": ["Area1", "Area2", "Area3", "Area4", "Area5", "Area6"],
+  "ledModes": [
+    {"i":0,"en":"Steady","zh":"常亮"},
+    {"i":1,"en":"Gaming Special Key","zh":"指点江山"},
+    {"i":2,"en":"Breathing","zh":"呼吸"},
+    {"i":3,"en":"Press and destroy","zh":"随按随灭"},
+    {"i":4,"en":"Neon stream","zh":"随波逐流"},
+    {"i":5,"en":"Streamer","zh":"流光模式"},
+    {"i":6,"en":"Flowing light and color","zh":"流光溢彩"},
+    {"i":7,"en":"Dripping ripples","zh":"滴水涟漪"},
+    {"i":8,"en":"Brilliant point","zh":"点彩夺目"},
+    {"i":9,"en":"Flash away","zh":"一触即发"},
+    {"i":10,"en":"Shadow disappear","zh":"踏雪无痕"},
+    {"i":11,"en":"Ripples shining","zh":"按键涟漪"},
+    {"i":12,"en":"Rich and honored","zh":"花开富贵"},
+    {"i":13,"en":"Marquee effect","zh":"跑马灯效"},
+    {"i":14,"en":"Rotating storm","zh":"旋转风暴"},
+    {"i":15,"en":"Serpentine horse race","zh":"蛇形跑马"},
+    {"i":16,"en":"Stars twinkle","zh":"繁星点点"},
+    {"i":17,"en":"Retro snake","zh":"川流不息"},
+    {"i":18,"en":"Diagonal transformation","zh":"斜拉变幻"},
+    {"i":19,"en":"Sine wave","zh":"正弦光波"}
+  ],
+  "macroPlayModes": [
+    {"i":0,"zh":"按下播放，抬起停止"},
+    {"i":1,"zh":"按播放，按任意停止"},
+    {"i":2,"zh":"按播放，再按一次停止"},
+    {"i":3,"zh":"循环播放指定次数"}
+  ],
+  "macroDelayModes": [
+    {"i":0,"zh":"录制延时"},
+    {"i":1,"zh":"固定延时"},
+    {"i":2,"zh":"无延时"}
+  ],
+  "funcKeys": [{"name":"Mouse Left","code":"050000"},{"name":"Mouse Right","code":"050001"},{"name":"Mouse Center","code":"050002"},{"name":"Mouse Left Side","code":"050003"},{"name":"Mouse Right Side","code":"050004"},{"name":"Volume-","code":"0c00ea"},{"name":"Volume+","code":"0c00e9"},{"name":"Mute","code":"0c00e2"},{"name":"Media Sel","code":"0c0183"},{"name":"Prev Track","code":"0c00b5"},{"name":"Play/Pause","code":"0c00cd"},{"name":"Next Track","code":"0c00b6"},{"name":"Email","code":"0c018a"},{"name":"Web/Home","code":"0c0223"},{"name":"Calculator","code":"0c0192"},{"name":"www back","code":"0c0224"},{"name":"www forward","code":"0c0225"},{"name":"www stop","code":"0c0226"},{"name":"www refresh","code":"0c0227"},{"name":"www search","code":"0c0221"},{"name":"Favorite","code":"0c022a"},{"name":"My PC","code":"0c0194"}],
+  "keys": [{"id":50,"name":"K42"},{"id":100,"name":"K45"},{"id":133,"name":"K107"},{"id":135,"name":"K56"},{"id":136,"name":"ROMA"},{"id":137,"name":"K14"},{"id":138,"name":"CHG"},{"id":139,"name":"NCHG"},{"id":144,"name":"K151"},{"id":145,"name":"K150"},{"id":208,"name":"G1"},{"id":209,"name":"G2"},{"id":210,"name":"G3"},{"id":41,"name":"Esc"},{"id":58,"name":"F1"},{"id":59,"name":"F2"},{"id":60,"name":"F3"},{"id":61,"name":"F4"},{"id":62,"name":"F5"},{"id":63,"name":"F6"},{"id":64,"name":"F7"},{"id":65,"name":"F8"},{"id":66,"name":"F9"},{"id":67,"name":"F10"},{"id":68,"name":"F11"},{"id":69,"name":"F12"},{"id":70,"name":"PrintScreen"},{"id":71,"name":"ScrollLock"},{"id":72,"name":"Pause"},{"id":53,"name":"~"},{"id":30,"name":"1"},{"id":31,"name":"2"},{"id":32,"name":"3"},{"id":33,"name":"4"},{"id":34,"name":"5"},{"id":35,"name":"6"},{"id":36,"name":"7"},{"id":37,"name":"8"},{"id":38,"name":"9"},{"id":39,"name":"0"},{"id":45,"name":"-"},{"id":46,"name":"="},{"id":42,"name":"Backspace"},{"id":73,"name":"Insert"},{"id":74,"name":"Home"},{"id":75,"name":"PageUp"},{"id":83,"name":"NumLock"},{"id":84,"name":"Pad /"},{"id":85,"name":"Pad *"},{"id":86,"name":"Pad -"},{"id":43,"name":"Tab"},{"id":20,"name":"Q"},{"id":26,"name":"W"},{"id":8,"name":"E"},{"id":21,"name":"R"},{"id":23,"name":"T"},{"id":28,"name":"Y"},{"id":24,"name":"U"},{"id":12,"name":"I"},{"id":18,"name":"O"},{"id":19,"name":"P"},{"id":47,"name":"["},{"id":48,"name":"]"},{"id":49,"name":"\\"},{"id":76,"name":"Del"},{"id":77,"name":"End"},{"id":78,"name":"PageDown"},{"id":95,"name":"Pad 7"},{"id":96,"name":"Pad 8"},{"id":97,"name":"Pad 9"},{"id":87,"name":"Pad +"},{"id":57,"name":"CapsLock"},{"id":4,"name":"A"},{"id":22,"name":"S"},{"id":7,"name":"D"},{"id":9,"name":"F"},{"id":10,"name":"G"},{"id":11,"name":"H"},{"id":13,"name":"J"},{"id":14,"name":"K"},{"id":15,"name":"L"},{"id":51,"name":";"},{"id":52,"name":"'"},{"id":40,"name":"Enter"},{"id":92,"name":"Pad 4"},{"id":93,"name":"Pad 5"},{"id":94,"name":"Pad 6"},{"id":225,"name":"LeftShif"},{"id":29,"name":"Z"},{"id":27,"name":"X"},{"id":6,"name":"C"},{"id":25,"name":"V"},{"id":5,"name":"B"},{"id":17,"name":"N"},{"id":16,"name":"M"},{"id":54,"name":","},{"id":55,"name":"."},{"id":56,"name":"/"},{"id":229,"name":"RightShift"},{"id":82,"name":"ArrowUp"},{"id":89,"name":"Pad 1"},{"id":90,"name":"Pad 2"},{"id":91,"name":"Pad 3"},{"id":88,"name":"Pad Enter"},{"id":224,"name":"LeftCtrl"},{"id":227,"name":"LeftWin"},{"id":226,"name":"LeftAtl"},{"id":44,"name":"Spacebar"},{"id":230,"name":"RightAlt"},{"id":101,"name":"App"},{"id":228,"name":"RightCtrl"},{"id":80,"name":"ArrowLeft"},{"id":81,"name":"ArrowDown"},{"id":79,"name":"ArrowRight"},{"id":98,"name":"Pad 0"},{"id":99,"name":"Pad ."},{"id":231,"name":"RightWin"}]
+}

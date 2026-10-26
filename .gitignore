@@ -1,0 +1,12 @@
+# Build output
+bin/
+obj/
+*.user
+.vs/
+
+# Packaging output (tools\pack.ps1)
+dist/
+
+# Signing material must never be committed
+*.pfx
+*.p12

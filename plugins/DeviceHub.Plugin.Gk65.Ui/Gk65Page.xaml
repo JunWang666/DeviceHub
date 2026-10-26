@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="DeviceHub.Plugin.Gk65.Ui.Gk65Page"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:DeviceHub.Plugin.Gk65.Ui"
+    xmlns:tk="using:CommunityToolkit.WinUI.Controls">
+
+    <UserControl.Resources>
+        <!-- 设置卡片之间 4px、分组之间 30px（WinUI 设置页规范） -->
+        <x:Double x:Key="CardSpacing">4</x:Double>
+        <Style x:Key="GroupHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+            <Setter Property="Margin" Value="1,30,0,6"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <SelectorBar x:Name="Sections" Grid.Row="0" SelectionChanged="Sections_SelectionChanged">
+            <SelectorBarItem x:Name="LightingTab" Text="灯光" IsSelected="True">
+                <SelectorBarItem.Icon><FontIcon Glyph="&#xE781;"/></SelectorBarItem.Icon>
+            </SelectorBarItem>
+            <SelectorBarItem x:Name="KeysTab" Text="按键测试">
+                <SelectorBarItem.Icon><FontIcon Glyph="&#xE765;"/></SelectorBarItem.Icon>
+            </SelectorBarItem>
+        </SelectorBar>
+
+        <!-- 灯光 -->
+        <ScrollViewer x:Name="LightingPanel" Grid.Row="1">
+            <StackPanel Spacing="{StaticResource CardSpacing}" Margin="0,0,0,36">
+                <InfoBar IsOpen="{x:Bind Vm.ShowUnauthorized, Mode=OneWay}" Severity="Warning" IsClosable="False"
+                         Title="未授权" Message="插件尚未获得此设备的访问授权。" Margin="0,0,0,8"/>
+                <InfoBar IsOpen="True" Severity="Informational" IsClosable="True"
+                         Message="{x:Bind Vm.SourceNote, Mode=OneWay}" Margin="0,0,0,8"/>
+
+                <TextBlock Text="面板灯" Style="{StaticResource GroupHeaderStyle}" Margin="1,0,0,6"/>
+                <tk:SettingsCard Header="灯效" Description="切换后立即同步到键盘">
+                    <tk:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE781;"/></tk:SettingsCard.HeaderIcon>
+                    <ComboBox MinWidth="200" ItemsSource="{x:Bind Vm.PanelModes}" DisplayMemberPath="Zh"
+                              SelectedIndex="{x:Bind Vm.PanelModeIndex, Mode=TwoWay}" IsEnabled="{x:Bind Vm.Authorized, Mode=OneWay}"/>
+                </tk:SettingsCard>
+                <tk:SettingsCard Header="亮度" Description="0 为关闭背光">
+                    <tk:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE706;"/></tk:SettingsCard.HeaderIcon>
+                    <Slider Width="200" Minimum="0" Maximum="5" StepFrequency="1" TickFrequency="1" TickPlacement="Outside"
+                            Value="{x:Bind Vm.Brightness, Mode=TwoWay}" IsEnabled="{x:Bind Vm.Authorized, Mode=OneWay}"/>
+                </tk:SettingsCard>
+                <tk:SettingsCard Header="速度" Description="动态灯效的变化速度；常亮模式不可调">
+                    <tk:SettingsCard.HeaderIcon><FontIcon Glyph="&#xEC4A;"/></tk:SettingsCard.HeaderIcon>
+                    <Slider Width="200" Minimum="0" Maximum="4" StepFrequency="1" TickFrequency="1" TickPlacement="Outside"
+                            Value="{x:Bind Vm.Speed, Mode=TwoWay}" IsEnabled="{x:Bind Vm.SpeedEnabled, Mode=OneWay}"/>
+                </tk:SettingsCard>
+
+                <TextBlock Text="{x:Bind Vm.SyncText, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="1,8,0,0"/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- 按键测试 -->
+        <ScrollViewer x:Name="KeysPanel" Grid.Row="1" Visibility="Collapsed">
+            <StackPanel Spacing="12" Margin="0,0,0,36">
+                <tk:SettingsCard Header="按键测试" Description="打开后，在本窗口按下的键会在下图中高亮。只在 DeviceHub 处于前台时生效，不做记录。">
+                    <tk:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE765;"/></tk:SettingsCard.HeaderIcon>
+                    <StackPanel Orientation="Horizontal" Spacing="16">
+                        <TextBlock x:Name="PressedText" VerticalAlignment="Center" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                        <ToggleSwitch x:Name="KeyTestSwitch" OnContent="开" OffContent="关" MinWidth="0" Toggled="KeyTest_Toggled"/>
+                    </StackPanel>
+                </tk:SettingsCard>
+                <!-- 按官方键位图（positions.xml）绘制的 65% 键盘，随可用宽度等比缩小 -->
+                <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+                    <Border Padding="12" CornerRadius="{StaticResource OverlayCornerRadius}"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                        <Canvas x:Name="KeyCanvas"/>
+                    </Border>
+                </Viewbox>
+                <TextBlock Text="Fn 由键盘固件处理，系统收不到，所以不会高亮；经 Fn 组合出的键（如 F1）只显示名称。"
+                           TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>
