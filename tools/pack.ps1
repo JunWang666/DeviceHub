@@ -57,6 +57,7 @@ function Pack-Plugin($backendProj, $uiProj) {
 Pack-Plugin "DeviceHub.Plugin.Gk65" "DeviceHub.Plugin.Gk65.Ui"
 Pack-Plugin "DeviceHub.Plugin.AirPods" "DeviceHub.Plugin.AirPods.Ui"
 Pack-Plugin "DeviceHub.Plugin.GameSir" "DeviceHub.Plugin.GameSir.Ui"
+Pack-Plugin "DeviceHub.Plugin.Logitech" "DeviceHub.Plugin.Logitech.Ui"
 Remove-Item (Join-Path $dist ".stage") -Recurse -Force
 
 # 3) Portable zip

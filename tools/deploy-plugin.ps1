@@ -45,5 +45,7 @@ Deploy-One "DeviceHub.Plugin.Gk65" "DeviceHub.Plugin.Gk65.Ui" | Out-Null
 Deploy-One "DeviceHub.Plugin.AirPods" "DeviceHub.Plugin.AirPods.Ui" | Out-Null
 # GameSir controller plugin
 Deploy-One "DeviceHub.Plugin.GameSir" "DeviceHub.Plugin.GameSir.Ui" | Out-Null
+# Logitech HID++ plugin
+Deploy-One "DeviceHub.Plugin.Logitech" "DeviceHub.Plugin.Logitech.Ui" | Out-Null
 
 Write-Host "done. plugin store: $data\plugins"
