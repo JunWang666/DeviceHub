@@ -78,6 +78,13 @@ public sealed partial class NewDevicePage : Page
         if (App.MainWindow is MainWindow mw) mw.NavigateToManagedDevice(dev.DeviceKey);
     }
 
+    private async void Rename_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as Button)?.Tag is GrantInfo g
+            && await RenameDeviceDialog.ShowAsync(XamlRoot, g.PluginId, g.DeviceKey, g.CustomName, g.DefaultName))
+            await ReloadAsync();
+    }
+
     private async void Details_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as Button)?.Tag is GrantInfo g) await DeviceDetailsDialog.ShowAsync(XamlRoot, g.DeviceKey, g);

@@ -162,6 +162,24 @@ public sealed class PluginManager
     }
 
     /// <summary>
+    /// 设备不在线时，按设备键里的总线与 VID/PID（"hid:1a2c:7fff:…"、"bt:004c:…"）在 manifest 里找声明名，
+    /// 给没记下名字的旧授权记录兜底。
+    /// </summary>
+    public string? DeclaredName(string pluginId, string deviceKey)
+    {
+        var m = ActiveManifest(pluginId);
+        if (m is null) return null;
+        var parts = deviceKey.Split(':');
+        var bus = parts[0] switch { "hid" => "Hid", "bt" => "Bluetooth", _ => null };
+        const System.Globalization.NumberStyles hex = System.Globalization.NumberStyles.HexNumber;
+        if (bus is null || parts.Length < 3 || !ushort.TryParse(parts[1], hex, null, out var vid)
+            || !ushort.TryParse(parts[2], hex, null, out var pid)) return null;
+        return m.Devices.FirstOrDefault(d =>
+            string.Equals(d.Bus, bus, StringComparison.OrdinalIgnoreCase) &&
+            (d.Vid == 0 || d.Vid == vid) && (d.Pid.Count == 0 || d.Pid.Contains(pid)))?.Name;
+    }
+
+    /// <summary>
     /// 把插件请求的通道角色（null = 默认，即声明的第一个）解析为设备上的实际通道。
     /// 未声明的角色返回 null —— 插件碰不到自己没声明的通道。
     /// </summary>

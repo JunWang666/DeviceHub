@@ -40,6 +40,8 @@ public sealed record DeviceInfo
     public ushort Pid { get; init; }
     public string? Serial { get; init; }
     public required string DisplayName { get; init; }
+    /// <summary>未自定义时的名称（插件描述 &gt; manifest 声明名 &gt; 产品串）；用户改过名时 DisplayName 是自定义名。</summary>
+    public string? DefaultName { get; init; }
     /// <summary>同一物理设备的全部通道：HID 集合（按 ContainerId 聚合），或核心为蓝牙设备提供的通道。</summary>
     public IReadOnlyList<HidChannelInfo> Channels { get; init; } = Array.Empty<HidChannelInfo>();
     /// <summary>供 UI 显示：如 "6 个 HID 通道：mi00-0001-0006, …"。</summary>
@@ -105,8 +107,12 @@ public sealed record GrantInfo
     public required AccessScope Scope { get; init; }
     /// <summary>插件 manifest 中的显示名。</summary>
     public string PluginDisplayName { get; init; } = "";
-    /// <summary>设备显示名（插件声明的名称优先）。设备不在线时为空。</summary>
+    /// <summary>设备显示名：自定义名 &gt; 上次在线时的名称 &gt; 插件声明的名称。从未在线过的旧记录为空。</summary>
     public string DeviceDisplayName { get; init; } = "";
+    /// <summary>未自定义时的名称（用于改名对话框的占位与"恢复默认"）。</summary>
+    public string DefaultName { get; init; } = "";
+    /// <summary>用户起的名字，没有为 null。</summary>
+    public string? CustomName { get; init; }
     /// <summary>授权（接入）时间；旧记录可能没有。</summary>
     public DateTimeOffset? GrantedAt { get; init; }
     public bool DeviceConnected { get; init; }

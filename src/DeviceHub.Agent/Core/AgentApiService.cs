@@ -43,13 +43,21 @@ public sealed class AgentApiService : IAgentApi
         var declared = (owner is null ? null : _plugins.MatchDevice(owner, d)?.Name)
                        ?? candidates.Select(id => _plugins.MatchDevice(id, d)?.Name).FirstOrDefault(n => n is not null);
         var desc = owner is null ? null : await _supervisor.DescribeDeviceAsync(owner, d.DeviceKey);
+        var defaultName = desc?.Title ?? declared ?? d.DisplayName;
+        string? custom = null;
+        if (owner is not null)
+        {
+            _perms.RememberName(owner, d.DeviceKey, defaultName);
+            custom = _perms.GetNames(owner, d.DeviceKey).CustomName;
+        }
         return d with
         {
             OwnerPluginId = owner,
             OwnerPluginName = owner is null ? null : plugins.TryGetValue(owner, out var p) ? p.DisplayName : owner,
             GrantedAt = grant?.GrantedAt,
             HasCandidatePlugin = candidates.Count > 0,
-            DisplayName = desc?.Title ?? declared ?? d.DisplayName,
+            DisplayName = custom ?? defaultName,
+            DefaultName = defaultName,
             Subtitle = desc?.Subtitle,
         };
     }
@@ -99,6 +107,10 @@ public sealed class AgentApiService : IAgentApi
             .Select(g =>
             {
                 var dev = devices.GetValueOrDefault(g.DeviceKey);
+                // 离线时用上次在线时记下的名字；在线时也优先用它（它来自插件描述，比 manifest 名更具体）
+                var (last, custom) = _perms.GetNames(g.PluginId, g.DeviceKey);
+                var live = dev is null ? null : _plugins.MatchDevice(g.PluginId, dev)?.Name ?? dev.DisplayName;
+                var defaultName = last ?? live ?? _plugins.DeclaredName(g.PluginId, g.DeviceKey) ?? "";
                 return new GrantInfo
                 {
                     PluginId = g.PluginId,
@@ -106,7 +118,9 @@ public sealed class AgentApiService : IAgentApi
                     Scope = g.Scope,
                     GrantedAt = g.GrantedAt,
                     PluginDisplayName = plugins.TryGetValue(g.PluginId, out var p) ? p.DisplayName : g.PluginId,
-                    DeviceDisplayName = dev is null ? "" : _plugins.MatchDevice(g.PluginId, dev)?.Name ?? dev.DisplayName,
+                    DeviceDisplayName = custom ?? defaultName,
+                    DefaultName = defaultName,
+                    CustomName = custom,
                     DeviceConnected = dev is not null,
                 };
             })
@@ -114,6 +128,9 @@ public sealed class AgentApiService : IAgentApi
             .ToList();
         return Task.FromResult(list);
     }
+
+    public Task RenameDeviceAsync(string pluginId, string deviceKey, string? name)
+    { _perms.SetCustomName(pluginId, deviceKey, name); return Task.CompletedTask; }
 
     public Task RevokeGrantAsync(string pluginId, string deviceKey)
     { _perms.Revoke(pluginId, deviceKey); return Task.CompletedTask; }

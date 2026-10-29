@@ -22,6 +22,9 @@ public interface IAgentApi
     /// <summary>授权指定插件管理此设备（Always 授权 + 启动并接管），之后设备进入"正在管理"。</summary>
     Task AuthorizeAndUseAsync(string pluginId, string deviceKey);
 
+    /// <summary>给已授权的设备起名字（存在授权记录里）；name 为空表示恢复默认名。</summary>
+    Task RenameDeviceAsync(string pluginId, string deviceKey, string? name);
+
     /// <summary>撤销某插件对某设备的授权。</summary>
     Task RevokeGrantAsync(string pluginId, string deviceKey);
 

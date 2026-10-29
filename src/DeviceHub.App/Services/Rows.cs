@@ -63,10 +63,8 @@ public sealed class NewDeviceRow
 public sealed class GrantRow
 {
     public required GrantInfo Grant { get; init; }
-    public string Title => Grant.DeviceConnected && !string.IsNullOrEmpty(Grant.DeviceDisplayName)
-        ? Grant.DeviceDisplayName
-        : "设备未连接";
-    public string Description => Fmt.Managed(null, Grant.PluginDisplayName, Grant.GrantedAt);
+    public string Title => string.IsNullOrEmpty(Grant.DeviceDisplayName) ? "未知设备" : Grant.DeviceDisplayName;
+    public string Description => Fmt.Managed(Grant.DeviceConnected ? null : "未连接", Grant.PluginDisplayName, Grant.GrantedAt);
 }
 
 /// <summary>"插件"列表项。</summary>

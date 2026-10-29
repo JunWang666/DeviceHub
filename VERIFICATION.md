@@ -194,3 +194,10 @@ src\DeviceHub.App\bin\x64\Debug\net10.0-windows10.0.26100.0\win-x64\DeviceHub.Ap
 - **未验证**：VM 里没有真实 USB 3 / Type-C / SuperSpeed+ / Billboard 设备，BOS、SS+ 通道数、Type-C 标志与外置 USB 3 集线器的合并只按文档实现。
 - **做不到**：Windows 不向用户态公开 Type-C 线缆 e-marker（线缆额定电流/速率）与 PD 协商功率，所以没有 WhatCable 的"这根线是 100W/40Gbps"信息，
   线缆质量只能从"设备能力 vs 实际速率"间接判断。
+
+## 设备名记忆与自定义名（2026-10-29）
+- 授权记录（grants.json）新增 `lastName`（设备在线时的显示名，变化才写盘）和 `customName`（用户起的名字）。撤销授权时一并删除。
+- 显示名优先级：自定义名 > 上次在线时的名称 > 插件 manifest 按设备键 VID/PID 匹配到的声明名。所以没记过名字的旧记录离线时也有名字。
+- 「已授权的设备」离线时照常显示名字，副标题加「未连接」；列表和设备页头都有「重命名」（留空 = 恢复默认名）。接口：`IAgentApi.RenameDeviceAsync`。
+- 实测：经 Agent 管道调用 ListGrants → Rename("  我的键盘 ") → Rename("") 依次得到 GK65 三模键盘 / 我的键盘（已去空格）/ GK65 三模键盘；
+  UI Automation 读到离线 GK65 行显示名字与「未连接」。设备在线时记下名字（RememberName）这一步本机没有在线的已授权设备，未实测。

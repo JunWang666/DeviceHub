@@ -44,6 +44,19 @@ public sealed partial class DevicePluginHostPage : Page
         }
     }
 
+    private async void Rename_Click(object sender, RoutedEventArgs e)
+    {
+        if (_dev?.OwnerPluginId is not { } pluginId) return;
+        var custom = _dev.DisplayName != _dev.DefaultName ? _dev.DisplayName : null;
+        if (!await RenameDeviceDialog.ShowAsync(XamlRoot, pluginId, _dev.DeviceKey, custom, _dev.DefaultName ?? _dev.DisplayName)) return;
+        // 刷新后左侧菜单会重建，页头直接取新的设备信息
+        if (AppState.Instance.ManagedDevices.FirstOrDefault(d => d.DeviceKey == _dev.DeviceKey) is { } fresh)
+        {
+            _dev = fresh;
+            TitleText.Text = fresh.DisplayName;
+        }
+    }
+
     private async void Details_Click(object sender, RoutedEventArgs e)
     {
         if (_dev is not null) await DeviceDetailsDialog.ShowAsync(XamlRoot, _dev.DeviceKey);
