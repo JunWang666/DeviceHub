@@ -43,6 +43,9 @@ public interface IAgentApi
 
     /// <summary>安装插件包（.dhplugin），返回插件 Id。插件 UI 在重启界面后生效。</summary>
     Task<string> InstallPluginPackageAsync(string packagePath);
+
+    /// <summary>扫描 USB 拓扑（主控制器 → 集线器 → 端口 → 设备）及诊断结论。只读，不需要设备授权。</summary>
+    Task<UsbTopology> GetUsbTopologyAsync();
 }
 
 /// <summary>
@@ -55,6 +58,8 @@ public interface IAppCallback
     void OnPluginStateChanged(PluginInfo plugin);
     /// <summary>插件后端推送的状态变更（Host → Agent → App → 插件 UI）。</summary>
     void OnPluginStatePushed(string pluginId, string deviceKey, string stateJson);
+    /// <summary>有 USB 设备或集线器插拔（已合并连续事件），UI 可重新扫描拓扑。</summary>
+    void OnUsbChanged();
 }
 
 /// <summary>

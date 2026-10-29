@@ -177,3 +177,20 @@ src\DeviceHub.App\bin\x64\Debug\net10.0-windows10.0.26100.0\win-x64\DeviceHub.Ap
   0xF 未知哨兵；AAP 控制帧/订阅帧字节、电量推送与回显解析）；本机（无蓝牙适配器）Agent 启动正常、两个插件后端都启动；
   App 自检（现会逐个加载所有插件的 XAML）中 `AirPodsPage` 动态加载成功。
 - **未验证**：本机没有蓝牙硬件，真机 AirPods 的枚举、广播接收、AAP 驱动收发都还没跑过；两种驱动的 IOCTL 按各自源码实现，未实测。
+
+## USB 拓扑与诊断（2026-10-29）
+核心功能（不是插件）：左侧导航「USB」。思路同 macOS 的 WhatCable：每个设备接在哪个物理接口、协商到多快、能不能更快。
+- **Agent**：`Native/NativeUsb.cs` 用 USBView 同款 hub IOCTL 扫描（主控制器 → 根集线器 → 端口 → 设备，集线器递归）。
+  只读：不打开设备本身，描述符请求经集线器发出，不需要管理员权限，也不走插件授权。每个端口读：
+  端口属性（Type-C、外部可插拔、伴随端口）、连接信息 EX/V2（速率、端口支持的协议、"设备能更快"标志）、
+  SuperSpeed+ 通道数、字符串/配置/BOS 描述符（取电、接口类别、LPM/SS/SS+ 能力、Billboard 备用模式）、PnP 节点（驱动、问题代码、子功能名）。
+  一个物理 USB 3 接口在系统里是 USB 3 端口 + USB 2 伴随端口（外置 USB 3 集线器是两个集线器），扫描后按伴随关系合并成一个。
+- **诊断**（`Core/UsbDiagnostics.cs`）：设备能力 > 实际速率时区分"线缆只有 USB 2.0 线芯 / 接在 USB 2.0 接口 / 受集线器限速 / 10G 设备跑 5G / 高速设备跑全速"；
+  另有供电不足、过流、识别失败、带宽不足、层级过深、驱动问题代码、DisplayPort/雷电备用模式失败（Billboard）。
+- **推送**：`Native/UsbWatcher.cs`（CM_Register_Notification，USB 设备/集线器接口，合并 0.5s）→ `IAppCallback.OnUsbChanged` → USB 页自动重扫。
+- **调试**：`DeviceHub.Agent.exe --usb-dump` 打印一次扫描结果 JSON 后退出；设 `DEVICEHUB_USB_TRACE=1` 时 stderr 输出每一步 IOCTL。
+- **实测（本 VM）**：3 个控制器（VMware xHCI/EHCI/UHCI）、4 个设备；xHCI 根集线器 USB 3 端口 1–4 与 USB 2 伴随端口 5–8 正确合并；
+  自检 `SELFTEST: USB 控制器=3 设备=4 诊断=0`，UI Automation 读到树节点与详情。诊断分支用合成数据跑过 8 个用例，结果符合预期。
+- **未验证**：VM 里没有真实 USB 3 / Type-C / SuperSpeed+ / Billboard 设备，BOS、SS+ 通道数、Type-C 标志与外置 USB 3 集线器的合并只按文档实现。
+- **做不到**：Windows 不向用户态公开 Type-C 线缆 e-marker（线缆额定电流/速率）与 PD 协商功率，所以没有 WhatCable 的"这根线是 100W/40Gbps"信息，
+  线缆质量只能从"设备能力 vs 实际速率"间接判断。

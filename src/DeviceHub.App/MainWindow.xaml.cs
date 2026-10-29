@@ -47,6 +47,11 @@ public sealed partial class MainWindow : Window
         {
             var agent = _state.Client.Agent!;
             Console.WriteLine($"SELFTEST: 新设备={_state.NewDevices.Count} 正在管理={_state.ManagedDevices.Count}");
+            var usb = await agent.GetUsbTopologyAsync();
+            var usbIssues = new List<(Services.UsbRow, UsbIssue)>();
+            var usbRows = Services.UsbTreeBuilder.Build(usb, showEmptyPorts: false, usbIssues);
+            Console.WriteLine($"SELFTEST: USB 控制器={usb.Controllers.Count} 设备={usbRows.Sum(CountDevices)} 诊断={usbIssues.Count}");
+            ContentFrame.Navigate(typeof(UsbPage));
             // 每个已安装插件的 XAML 都加载一次（不依赖设备在线；设备标识是假的，后端返回默认状态）。
             foreach (var p in _state.Plugins.Where(p => p.UiAssemblyPath is not null && p.UiPageTypeName is not null))
             {
@@ -74,6 +79,8 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex) { Console.WriteLine("SELFTEST: 失败 " + ex); }
     }
+
+    private static int CountDevices(Services.UsbRow r) => (r.Badge.Length > 0 ? 1 : 0) + r.Children.Sum(CountDevices);
 
     /// <summary>按有效像素设定初始窗口大小（随 DPI 缩放），并居中到当前显示器工作区。</summary>
     private void SizeAndCenter(int width, int height)
@@ -135,6 +142,7 @@ public sealed partial class MainWindow : Window
         if (tag is null) return;
         if (tag == "new") ContentFrame.Navigate(typeof(NewDevicePage));
         else if (tag == "plugins") ContentFrame.Navigate(typeof(PluginsPage));
+        else if (tag == "usb") ContentFrame.Navigate(typeof(UsbPage));
         else if (tag.StartsWith("dev:"))
         {
             var key = tag[4..];

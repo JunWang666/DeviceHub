@@ -10,6 +10,19 @@ public static class Program
 {
     public static async Task Main(string[] args)
     {
+        // 调试：打印一次 USB 拓扑扫描结果（JSON）后退出，不启动 Agent
+        if (args.Contains("--usb-dump"))
+        {
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(Native.NativeUsb.Scan(), new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+            }));
+            return;
+        }
+
         var dataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DeviceHub");
         Directory.CreateDirectory(dataDir);
 
@@ -59,6 +72,10 @@ public static class Program
             _ = supervisor.SyncDevicesAsync();
         });
         bluetooth.Changed += () => btDebounce.Change(500, Timeout.Infinite);
+
+        // —— USB 插拔：通知 UI 重新扫描拓扑（USB 页打开时才会真的去扫） ——
+        using var usbWatcher = new Native.UsbWatcher();
+        usbWatcher.Changed += appHub.UsbChanged;
 
         // 启动已安装且未禁用的插件
         foreach (var id in plugins.PluginIds())

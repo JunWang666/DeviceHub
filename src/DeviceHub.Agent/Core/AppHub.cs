@@ -20,6 +20,7 @@ public sealed class AppHub
     public void PluginStateChanged(PluginInfo p) => Safe(c => c.OnPluginStateChanged(p));
     public void PluginStatePushed(string pluginId, string deviceKey, string json) =>
         Safe(c => c.OnPluginStatePushed(pluginId, deviceKey, json));
+    public void UsbChanged() => Safe(c => c.OnUsbChanged());
 
     private void Safe(Action<IAppCallback> act)
     {

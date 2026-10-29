@@ -41,6 +41,9 @@
                 <muxc:NavigationViewItem Content="插件" Tag="plugins">
                     <muxc:NavigationViewItem.Icon><FontIcon Glyph="&#xE74C;"/></muxc:NavigationViewItem.Icon>
                 </muxc:NavigationViewItem>
+                <muxc:NavigationViewItem Content="USB" Tag="usb">
+                    <muxc:NavigationViewItem.Icon><FontIcon Glyph="&#xE88E;"/></muxc:NavigationViewItem.Icon>
+                </muxc:NavigationViewItem>
                 <muxc:NavigationViewItemSeparator x:Name="DeviceSeparator" Visibility="Collapsed"/>
                 <muxc:NavigationViewItemHeader x:Name="DeviceHeader" Content="设备" Visibility="Collapsed"/>
             </muxc:NavigationView.MenuItems>

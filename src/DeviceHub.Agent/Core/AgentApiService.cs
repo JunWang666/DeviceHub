@@ -158,6 +158,8 @@ public sealed class AgentApiService : IAgentApi
         return r.Id;
     }
 
+    public Task<UsbTopology> GetUsbTopologyAsync() => Task.Run(Native.NativeUsb.Scan);
+
     private static string? PeekId(string packagePath)
     {
         try
