@@ -52,6 +52,12 @@ public sealed partial class MainWindow : Window
             var usbRows = Services.UsbTreeBuilder.Build(usb, showEmptyPorts: false, usbIssues);
             Console.WriteLine($"SELFTEST: USB 控制器={usb.Controllers.Count} 设备={usbRows.Sum(CountDevices)} 诊断={usbIssues.Count}");
             ContentFrame.Navigate(typeof(UsbPage));
+            Services.OsdWindow.Show(new OsdMessage
+            {
+                PluginId = "selftest", DeviceKey = "selftest:none", DeviceName = "自检设备",
+                Kind = OsdKind.BatteryLow, Glyph = "", Text = "电量低（12%），请及时充电", Percent = 12,
+            });
+            Console.WriteLine("SELFTEST: 屏幕状态提示窗口已显示");
             // 每个已安装插件的 XAML 都加载一次（不依赖设备在线；设备标识是假的，后端返回默认状态）。
             foreach (var p in _state.Plugins.Where(p => p.UiAssemblyPath is not null && p.UiPageTypeName is not null))
             {
@@ -112,13 +118,16 @@ public sealed partial class MainWindow : Window
                      .Where(i => (i.Tag as string)?.StartsWith("dev:") == true).ToList())
             Nav.MenuItems.Remove(item);
 
-        foreach (var dev in _state.ManagedDevices)
-            Nav.MenuItems.Add(new NavigationViewItem
-            {
-                Content = dev.DisplayName,
-                Tag = "dev:" + dev.DeviceKey,
-                Icon = new FontIcon { Glyph = "" },
-            });
+        // 子设备（如接收器上配对的鼠标）挂在父设备下面，默认展开；未连接的子设备淡显。
+        var managedKeys = _state.ManagedDevices.Select(d => d.DeviceKey).ToHashSet();
+        foreach (var dev in _state.ManagedDevices.Where(d => d.ParentKey is null || !managedKeys.Contains(d.ParentKey)))
+        {
+            var item = DeviceItem(dev);
+            foreach (var child in _state.ManagedDevices.Where(c => c.ParentKey == dev.DeviceKey))
+                item.MenuItems.Add(DeviceItem(child));
+            item.IsExpanded = item.MenuItems.Count > 0;
+            Nav.MenuItems.Add(item);
+        }
 
         var hasDevices = _state.ManagedDevices.Count > 0;
         DeviceSeparator.Visibility = hasDevices ? Visibility.Visible : Visibility.Collapsed;
@@ -128,7 +137,7 @@ public sealed partial class MainWindow : Window
         // 还原选中项；默认选中"新设备"
         if (selectedKey != null && selectedKey.StartsWith("dev:"))
         {
-            var match = Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => (string?)i.Tag == selectedKey);
+            var match = FindItem(selectedKey);
             if (match != null) { Nav.SelectedItem = match; return; }
         }
         if (Nav.SelectedItem == null)
@@ -153,9 +162,23 @@ public sealed partial class MainWindow : Window
 
     public void NavigateToManagedDevice(string deviceKey)
     {
-        var item = Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => (string?)i.Tag == "dev:" + deviceKey);
+        var item = FindItem("dev:" + deviceKey);
         if (item != null) Nav.SelectedItem = item;
     }
+
+    private static NavigationViewItem DeviceItem(DeviceInfo dev) => new()
+    {
+        Content = dev.DisplayName,
+        Tag = "dev:" + dev.DeviceKey,
+        Icon = new FontIcon { Glyph = "" },
+        Opacity = dev.IsChild && !dev.Connected ? 0.55 : 1,
+    };
+
+    /// <summary>在菜单（含子设备层级）里按 Tag 找项。</summary>
+    private NavigationViewItem? FindItem(string tag) =>
+        Nav.MenuItems.OfType<NavigationViewItem>()
+            .SelectMany(i => i.MenuItems.OfType<NavigationViewItem>().Prepend(i))
+            .FirstOrDefault(i => (string?)i.Tag == tag);
 
     // 兜底：仍支持插件自发的授权弹窗（新流程下一般不触发）
     private async void OnPermissionRequested(PermissionRequest req)

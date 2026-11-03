@@ -21,7 +21,7 @@ public sealed partial class NewDevicePage : Page
 
         if (AppState.Instance.Client.Agent is { } a)
         {
-            var grants = (await a.ListGrantsAsync()).Where(g => g.Scope == AccessScope.Always)
+            var grants = (await a.ListGrantsAsync()).Where(g => g.Scope == AccessScope.Always && !DeviceKeys.IsChild(g.DeviceKey)) // 子设备随父设备授权，不单独列出
                 .Select(g => new GrantRow { Grant = g }).ToList();
             GrantList.ItemsSource = grants;
             NoGrantHint.Visibility = grants.Count == 0 ? Visibility.Visible : Visibility.Collapsed;

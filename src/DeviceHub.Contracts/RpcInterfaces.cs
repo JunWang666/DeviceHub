@@ -61,6 +61,8 @@ public interface IAppCallback
     void OnPluginStateChanged(PluginInfo plugin);
     /// <summary>插件后端推送的状态变更（Host → Agent → App → 插件 UI）。</summary>
     void OnPluginStatePushed(string pluginId, string deviceKey, string stateJson);
+    /// <summary>插件请求的屏幕状态提示（核心已校验设备归属并填好设备名）。</summary>
+    void OnOsd(OsdMessage message);
     /// <summary>有 USB 设备或集线器插拔（已合并连续事件），UI 可重新扫描拓扑。</summary>
     void OnUsbChanged();
 }
@@ -107,4 +109,13 @@ public interface IHostToAgentApi
 
     // —— 通知（托盘/Toast）——
     Task NotifyAsync(string pluginId, string title, string message);
+    /// <summary>屏幕状态提示；deviceKey 必须是该插件正在管理的设备（或其子设备）。</summary>
+    Task ShowOsdAsync(string pluginId, string deviceKey, OsdContent content);
+
+    // —— 子设备 ——
+    /// <summary>
+    /// 发布 parentKey 下的全部子设备（整体替换，传空列表即清除）。插件必须已获得父设备的 Always 授权；
+    /// 子设备随父设备授权，键为 <see cref="DeviceKeys.Child"/>。
+    /// </summary>
+    Task PublishChildrenAsync(string pluginId, string parentKey, IReadOnlyList<ChildDevice> children);
 }

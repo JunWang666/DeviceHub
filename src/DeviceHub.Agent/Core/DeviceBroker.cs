@@ -24,6 +24,7 @@ public sealed class DeviceBroker : IDisposable
     private readonly ConcurrentDictionary<string, SafeFileHandle> _openHandles = new(); // "deviceKey|channelId" → handle
     private readonly ConcurrentDictionary<string, NativeHid.HidPath> _channels = new(); // "deviceKey|channelId" → 集合
     private readonly ConcurrentDictionary<string, DeviceInfo> _devices = new();        // deviceKey → 最近一次枚举结果
+    private readonly ConcurrentDictionary<string, (string PluginId, ChildDevice Child)> _children = new(); // 子设备键 → 发布者与内容
 
     public DeviceBroker(ILogger<DeviceBroker> log, PermissionService perms, PluginManager plugins, BluetoothService bt)
     {
@@ -31,7 +32,7 @@ public sealed class DeviceBroker : IDisposable
         _perms = perms;
         _plugins = plugins;
         _bt = bt;
-        _perms.GrantRevoked += (_, deviceKey) => { CloseHandles(deviceKey); _bt.CloseAap(deviceKey); };
+        _perms.GrantRevoked += (_, deviceKey) => { CloseHandles(deviceKey); _bt.CloseAap(deviceKey); RemoveChildren(c => c.Key.StartsWith(deviceKey + DeviceKeys.ChildSeparator, StringComparison.Ordinal)); };
     }
 
     public IReadOnlyList<DeviceInfo> Enumerate()
@@ -81,10 +82,55 @@ public sealed class DeviceBroker : IDisposable
             _devices[dev.DeviceKey] = dev;
             list.Add(dev);
         }
+        // 子设备跟在父设备后面；父设备不在线时不出现。
+        var parents = new Dictionary<string, DeviceInfo>();
+        foreach (var d in list) parents.TryAdd(d.DeviceKey, d);
+        foreach (var (key, (_, child)) in _children.OrderBy(c => c.Key, StringComparer.Ordinal))
+        {
+            DeviceKeys.TrySplit(key, out var parentKey, out _);
+            if (!parents.TryGetValue(parentKey, out var parent)) continue;
+            list.Add(new DeviceInfo
+            {
+                DeviceKey = key,
+                ParentKey = parentKey,
+                Bus = parent.Bus,
+                Vid = parent.Vid,
+                Pid = parent.Pid,
+                DisplayName = child.Name,
+                Connected = child.Connected,
+            });
+        }
         return list;
     }
 
     public DeviceInfo? Find(string deviceKey) => Enumerate().FirstOrDefault(d => d.DeviceKey == deviceKey);
+
+    // —— 子设备：由管理父设备的插件发布，只用于展示与路由，没有自己的通道 ——
+
+    /// <summary>整体替换 parentKey 下由 pluginId 发布的子设备；有变化时返回 true。</summary>
+    public bool SetChildren(string pluginId, string parentKey, IReadOnlyList<ChildDevice> children)
+    {
+        var prefix = parentKey + DeviceKeys.ChildSeparator;
+        var next = children.Where(c => c.Id.Length > 0 && !c.Id.Contains(DeviceKeys.ChildSeparator))
+            .GroupBy(c => c.Id).Select(g => g.First())
+            .ToDictionary(c => prefix + c.Id, c => (pluginId, c));
+        var old = _children.Where(kv => kv.Key.StartsWith(prefix, StringComparison.Ordinal)).ToList();
+        bool changed = old.Count != next.Count
+            || old.Any(kv => !next.TryGetValue(kv.Key, out var n) || n != kv.Value);
+        foreach (var kv in old.Where(kv => !next.ContainsKey(kv.Key))) _children.TryRemove(kv.Key, out _);
+        foreach (var (k, v) in next) _children[k] = v;
+        return changed;
+    }
+
+    /// <summary>插件停止/崩溃时清掉它发布的子设备。</summary>
+    public bool RemoveChildren(string pluginId) => RemoveChildren(c => c.Value.PluginId == pluginId);
+
+    private bool RemoveChildren(Func<KeyValuePair<string, (string PluginId, ChildDevice Child)>, bool> match)
+    {
+        bool any = false;
+        foreach (var kv in _children.Where(match).ToList()) any |= _children.TryRemove(kv.Key, out _);
+        return any;
+    }
 
     // —— 授权后的 I/O 代理。channel = 插件 manifest 里声明的通道角色，null 为默认（第一个声明的）——
     public Task<DeviceIoResult> GetFeatureAsync(string pluginId, string deviceKey, string? channel, byte reportId, int length)

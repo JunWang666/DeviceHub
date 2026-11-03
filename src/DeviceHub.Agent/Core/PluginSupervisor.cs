@@ -268,6 +268,7 @@ public sealed class PluginSupervisor : IDisposable
 
     private void Kill(HostEntry e)
     {
+        if (_broker.RemoveChildren(e.PluginId)) _appHub.DevicesChanged(_broker.Enumerate());
         try { e.Rpc?.Dispose(); } catch { }
         try { if (e.Process is { HasExited: false } p) p.Kill(true); } catch { }
         try { e.Job?.Dispose(); } catch { }

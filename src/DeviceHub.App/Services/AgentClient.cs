@@ -16,6 +16,7 @@ public sealed class AgentClient : IAppCallback, IDisposable
     public event Action<PluginInfo>? PluginStateChanged;
     public event Action<string, string, string>? PluginStatePushed; // pluginId, deviceKey, json
     public event Action? UsbChanged;
+    public event Action<OsdMessage>? Osd;
     public event Action? Disconnected;
 
     public async Task<bool> ConnectAsync(CancellationToken ct = default)
@@ -43,6 +44,7 @@ public sealed class AgentClient : IAppCallback, IDisposable
     public void OnPluginStatePushed(string pluginId, string deviceKey, string stateJson)
         => PluginStatePushed?.Invoke(pluginId, deviceKey, stateJson);
     public void OnUsbChanged() => UsbChanged?.Invoke();
+    public void OnOsd(OsdMessage message) => Osd?.Invoke(message);
 
     public void Dispose() => _rpc?.Dispose();
 }

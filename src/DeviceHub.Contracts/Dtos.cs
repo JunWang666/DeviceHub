@@ -60,6 +60,69 @@ public sealed record DeviceInfo
     public bool HasOwner => !string.IsNullOrEmpty(OwnerPluginId);
     /// <summary>是否存在可管理此设备的候选插件（无候选的设备不进“新设备”列表）。</summary>
     public bool HasCandidatePlugin { get; init; }
+    /// <summary>
+    /// 子设备所属的物理设备（如 Unifying 接收器上配对的鼠标）；物理设备为 null。
+    /// 子设备由管理父设备的插件发布，没有自己的通道，I/O 仍经父设备进行，授权随父设备。
+    /// </summary>
+    public string? ParentKey { get; init; }
+    public bool IsChild => ParentKey is not null;
+}
+
+/// <summary>插件发布的子设备：Id 在父设备内唯一且跨重启稳定（如配对设备的序列号）。</summary>
+public sealed record ChildDevice
+{
+    public required string Id { get; init; }
+    public required string Name { get; init; }
+    public bool Connected { get; init; }
+}
+
+/// <summary>设备键约定。核心生成的物理设备键不含 '/'，子设备键 = 父设备键 + "/" + 子设备 Id。</summary>
+public static class DeviceKeys
+{
+    public const char ChildSeparator = '/';
+    public static string Child(string parentKey, string childId) => parentKey + ChildSeparator + childId;
+    public static bool IsChild(string deviceKey) => deviceKey.Contains(ChildSeparator);
+
+    /// <summary>拆出父设备键与子设备 Id；不是子设备键时返回 false。</summary>
+    public static bool TrySplit(string deviceKey, out string parentKey, out string childId)
+    {
+        int i = deviceKey.IndexOf(ChildSeparator);
+        parentKey = i < 0 ? deviceKey : deviceKey[..i];
+        childId = i < 0 ? "" : deviceKey[(i + 1)..];
+        return i >= 0;
+    }
+}
+
+/// <summary>屏幕状态提示的预设种类：决定默认图标与强调色。</summary>
+public enum OsdKind { Info, Connected, Disconnected, BatteryLow, Charging, Charged, Warning }
+
+/// <summary>
+/// 插件请求的屏幕状态提示（类似系统音量浮窗，显示在屏幕底部中间）。
+/// 只能填模板里的字段：图标、一行文本、可选进度；设备名称由核心按用户看到的名称填写，插件无法隐藏或改写。
+/// </summary>
+public sealed record OsdContent
+{
+    public OsdKind Kind { get; init; } = OsdKind.Info;
+    /// <summary>Segoe Fluent Icons 的字形（单个私用区字符，U+E000–U+F8FF）；为空或不合法时用 Kind 的默认图标。</summary>
+    public string? Glyph { get; init; }
+    /// <summary>状态文本，最多 <see cref="MaxTextLength"/> 个字符，超出截断。</summary>
+    public required string Text { get; init; }
+    /// <summary>0–100 时显示进度条（如电量），null 不显示。</summary>
+    public int? Percent { get; init; }
+    public const int MaxTextLength = 40;
+}
+
+/// <summary>核心校验并补全后推给 UI 的状态提示。</summary>
+public sealed record OsdMessage
+{
+    public required string PluginId { get; init; }
+    public required string DeviceKey { get; init; }
+    /// <summary>核心填写的设备名（自定义名 &gt; 默认名），UI 必须显示。</summary>
+    public required string DeviceName { get; init; }
+    public required OsdKind Kind { get; init; }
+    public required string Glyph { get; init; }
+    public required string Text { get; init; }
+    public int? Percent { get; init; }
 }
 
 /// <summary><see cref="HidChannelInfo.Kind"/> 的取值。</summary>

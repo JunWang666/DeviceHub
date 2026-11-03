@@ -8,6 +8,7 @@ public sealed class BatteryState
     public bool Estimated { get; set; }
     public int? VoltageMv { get; set; }
     public bool Charging { get; set; }
+    public bool Full { get; set; }
     public string Status { get; set; } = "";
 }
 
@@ -74,6 +75,8 @@ public sealed class FeatureEntry
 public sealed class HidppDeviceState
 {
     public int Index { get; set; }
+    /// <summary>子设备 Id（序列号；读不到时为 slotN），直连设备为空。用作核心的子设备键。</summary>
+    public string Id { get; set; } = "";
     public string Name { get; set; } = "";
     /// <summary>mouse / keyboard / headset … 见 <see cref="HidppParse.DeviceType"/>。</summary>
     public string Kind { get; set; } = "unknown";
@@ -108,6 +111,8 @@ public sealed class LogitechState
     public string Status { get; set; } = "";
 
     public bool IsReceiver { get; set; }
+    /// <summary>这是接收器上某个配对设备的视图（子设备页），Devices 只含这一个设备。</summary>
+    public bool IsChild { get; set; }
     public string ProductName { get; set; } = "";
     /// <summary>unifying / bolt / lightspeed / nano / 空（直连设备）。</summary>
     public string ReceiverKind { get; set; } = "";

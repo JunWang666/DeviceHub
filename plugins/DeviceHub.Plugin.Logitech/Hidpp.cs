@@ -23,7 +23,7 @@ public static class Hidpp
     // —— HID++ 1.0 ——
     public const byte SetRegister = 0x80, GetRegister = 0x81, SetLongRegister = 0x82, GetLongRegister = 0x83;
     public const byte Error10 = 0x8F;
-    public const byte RegReceiverFirmware = 0xF1, RegReceiverInfo = 0xB5;
+    public const byte RegNotifications = 0x00, RegReceiverFirmware = 0xF1, RegReceiverInfo = 0xB5;
     /// <summary>设备连接 / 断开通知（子 id）。</summary>
     public const byte DeviceConnection = 0x41;
 

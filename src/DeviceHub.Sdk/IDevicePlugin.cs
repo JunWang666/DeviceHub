@@ -48,6 +48,14 @@ public interface IPluginContext
     INotifier Notify { get; }
     /// <summary>向 UI 推送状态变更。</summary>
     Task PushStateAsync(string deviceKey, string stateJson);
+
+    /// <summary>
+    /// 发布 parentKey（本插件管理的物理设备）下的全部子设备，整体替换；传空列表即清除。
+    /// 子设备在界面上是独立的设备项（可单独改名、打开页面），键为 <see cref="DeviceKeys.Child"/>(parentKey, Id)，
+    /// 之后 <see cref="IDevicePlugin.GetStateAsync"/>、<see cref="IDevicePlugin.InvokeAsync"/>、<see cref="IDevicePlugin.DescribeAsync"/>
+    /// 会收到子设备键。子设备没有通道，I/O 仍用父设备键。父设备被移除或授权撤销时子设备随之消失。
+    /// </summary>
+    Task PublishChildrenAsync(string parentKey, IReadOnlyList<ChildDevice> children);
 }
 
 /// <summary>
@@ -84,4 +92,11 @@ public interface IPluginStorage
 public interface INotifier
 {
     Task ShowAsync(string title, string message);
+
+    /// <summary>
+    /// 在屏幕底部中间弹出状态提示（类似系统音量浮窗），用于电量低、充电完成、连接/断开等。
+    /// 只能填模板字段（图标、文本、可选进度）；设备名称由核心按用户看到的名称显示，插件无法隐藏。
+    /// deviceKey 必须是本插件管理的设备或其子设备，否则忽略。界面未运行时不显示。
+    /// </summary>
+    Task ShowOsdAsync(string deviceKey, OsdContent content);
 }

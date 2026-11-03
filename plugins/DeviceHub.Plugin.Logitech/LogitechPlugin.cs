@@ -23,6 +23,9 @@ public sealed class LogitechPlugin : IDevicePlugin
     private readonly ConcurrentDictionary<string, Link> _links = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new();
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _pollers = new();
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _listeners = new();
+    /// <summary>一问一答期间读到的非回包（设备通知），由监听循环在释放设备锁后处理。</summary>
+    private readonly ConcurrentDictionary<string, ConcurrentQueue<byte[]>> _inbox = new();
     /// <summary>(deviceKey, 设备号) → feature id → 索引。</summary>
     private readonly ConcurrentDictionary<(string, int), Dictionary<ushort, byte>> _features = new();
     private static readonly JsonSerializerOptions J = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
@@ -53,7 +56,58 @@ public sealed class LogitechPlugin : IDevicePlugin
 
         await RefreshAsync(device.DeviceKey, st);
         StartPoll(device.DeviceKey, st);
+        StartListener(device.DeviceKey, st);
     }
+
+    // —— 子设备：接收器上的每个配对设备在核心里是一个独立设备（键 = 接收器键/Id），页面、改名、提示都按它走 ——
+
+    /// <summary>设备键 → (物理设备键, 状态, 对应的 HID++ 设备)。接收器本身没有对应设备（Ds 为 null）。</summary>
+    private (string Key, LogitechState St, HidppDeviceState? Ds) Resolve(string deviceKey)
+    {
+        if (DeviceKeys.TrySplit(deviceKey, out var parent, out var id))
+        {
+            var pst = _states.GetOrAdd(parent, _ => new LogitechState());
+            return (parent, pst, pst.Devices.FirstOrDefault(d => d.Id == id));
+        }
+        var st = _states.GetOrAdd(deviceKey, _ => new LogitechState());
+        return (deviceKey, st, st.IsReceiver ? null : st.Devices.FirstOrDefault());
+    }
+
+    /// <summary>设备在核心里的键：配对设备是子设备键，直连设备就是物理设备键。</summary>
+    private static string KeyOf(string key, LogitechState st, HidppDeviceState ds) =>
+        st.IsReceiver ? DeviceKeys.Child(key, ds.Id) : key;
+
+    /// <summary>推给某个设备页的状态：接收器 / 直连设备是完整状态，子设备只含它自己。</summary>
+    private LogitechState View(string deviceKey)
+    {
+        var (_, st, ds) = Resolve(deviceKey);
+        if (!DeviceKeys.IsChild(deviceKey)) return st;
+        return ds is null
+            ? new LogitechState { Authorized = st.Authorized, IsChild = true, ReceiverKind = st.ReceiverKind, Status = "接收器上已没有这个设备" }
+            : ChildView(st, ds);
+    }
+
+    private static LogitechState ChildView(LogitechState st, HidppDeviceState ds) => new()
+    {
+        Authorized = st.Authorized,
+        Connected = st.Connected && ds.Online,
+        Status = st.Status,
+        IsChild = true,
+        ProductName = ds.Name,
+        ReceiverKind = st.ReceiverKind,
+        Link = $"{ReceiverTitle(st.ReceiverKind)} · 设备 {ds.Index}",
+        Devices = [ds],
+        LastReadAt = st.LastReadAt,
+    };
+
+    private static string ChildName(HidppDeviceState d) => d.Name.Length > 0 ? d.Name : $"设备 {d.Index}";
+
+    /// <summary>把接收器的配对表同步成核心的子设备（核心比较后有变化才刷新界面）。</summary>
+    private Task PublishAsync(string key, LogitechState st) => _ctx.PublishChildrenAsync(key,
+        st.IsReceiver && st.Authorized
+            ? st.Devices.Where(d => d.Id.Length > 0)
+                .Select(d => new ChildDevice { Id = d.Id, Name = ChildName(d), Connected = d.Online }).ToList()
+            : []);
 
     /// <summary>按 PID 区分接收器类型（Solaar base_usb 的接收器表）；非接收器返回空。</summary>
     private static string ReceiverKind(ushort pid) => pid switch
@@ -77,6 +131,7 @@ public sealed class LogitechPlugin : IDevicePlugin
 
     public Task<DeviceDescription?> DescribeAsync(string deviceKey)
     {
+        if (DeviceKeys.IsChild(deviceKey)) return Task.FromResult(DescribeChild(deviceKey));
         if (!_states.TryGetValue(deviceKey, out var st)) return Task.FromResult<DeviceDescription?>(null);
         var online = st.Devices.Where(d => d.Online).ToList();
         string? title = st.IsReceiver ? ReceiverTitle(st.ReceiverKind) : st.Devices.FirstOrDefault()?.Name is { Length: > 0 } n ? n : null;
@@ -109,27 +164,107 @@ public sealed class LogitechPlugin : IDevicePlugin
         return Task.FromResult<DeviceDescription?>(new DeviceDescription { Title = title, Subtitle = subtitle, Details = details });
     }
 
+    private DeviceDescription? DescribeChild(string deviceKey)
+    {
+        var (_, st, ds) = Resolve(deviceKey);
+        if (ds is null) return null;
+        var subtitle = !ds.Online ? "未连接"
+            : ds.Battery?.Percent is { } p ? $"{ReceiverTitle(st.ReceiverKind)} · 电量 {p}%" : ReceiverTitle(st.ReceiverKind);
+        var details = new List<DeviceDetailItem>
+        {
+            new("连接方式", $"经 {ReceiverTitle(st.ReceiverKind)}（配对槽位 {ds.Index}）"),
+            new("状态", ds.Online ? "已连接" : ds.Status.Length > 0 ? ds.Status : "未连接"),
+            new("协议", ds.Protocol.Length > 0 ? "HID++ " + ds.Protocol : "未读取"),
+            new("固件", ds.Firmware.Length > 0 ? ds.Firmware : "未读取"),
+        };
+        if (ds.Wpid.Length > 0) details.Add(new("WPID", ds.Wpid));
+        details.Add(new("设备 Id", ds.Id.StartsWith("slot", StringComparison.Ordinal) ? $"{ds.Id}（接收器不提供序列号）" : ds.Id));
+        if (ds.Features.Count > 0) details.Add(new("Feature", string.Join("、", ds.Features.Select(f => f.Name))));
+        details.Add(new("最近读取", st.LastReadAt is { } t ? t.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") : "尚未读取"));
+        details.Add(new("设置恢复", "在本软件里改过的 DPI、回报率、滚轮等设置会在设备重新连接时自动写回"));
+        return new DeviceDescription { Title = ChildName(ds), Subtitle = subtitle, Details = details };
+    }
+
     public Task DetachAsync(string deviceKey)
     {
         if (_pollers.TryRemove(deviceKey, out var cts)) cts.Cancel();
+        if (_listeners.TryRemove(deviceKey, out var lcts)) lcts.Cancel();
         if (_states.TryGetValue(deviceKey, out var s)) { s.Connected = false; s.Status = "设备已移除"; }
         return Task.CompletedTask;
     }
 
     public async Task<string> InvokeAsync(string deviceKey, string method, string argsJson, CancellationToken ct)
     {
-        var st = _states.GetOrAdd(deviceKey, _ => new LogitechState());
+        // 子设备页的操作落到接收器状态里对应的配对设备上；I/O 一律用物理设备键。
+        var (key, st, ds) = Resolve(deviceKey);
         var a = string.IsNullOrWhiteSpace(argsJson) ? default : JsonDocument.Parse(argsJson).RootElement;
 
         if (method == "Refresh")
         {
-            await RefreshAsync(deviceKey, st);
-            return Json(st);
+            await RefreshAsync(key, st);
+            return Json(View(deviceKey));
         }
 
-        var ds = st.Devices.FirstOrDefault(d => d.Index == Int(a, "index", st.Devices.FirstOrDefault()?.Index ?? Hidpp.Receiver));
-        if (ds is null) { st.Status = "设备不存在"; return Json(st); }
-        if (!ds.Online) { ds.Status = "设备未连接，无法写入"; await Push(deviceKey, st); return Json(st); }
+        if (ds is null) { st.Status = st.IsReceiver ? "请在左侧选择接收器下的设备进行设置" : "设备不存在"; return Json(View(deviceKey)); }
+        if (!ds.Online) { ds.Status = "设备未连接，无法写入"; await Push(key, st); return Json(View(deviceKey)); }
+
+        await ApplyAsync(key, st, ds, method, a);
+        if (Persisted.Contains(method) && ds.Status == Written)
+            await SaveSettingAsync(KeyOf(key, st, ds), method, string.IsNullOrWhiteSpace(argsJson) ? "{}" : argsJson);
+
+        await Push(key, st);
+        return Json(View(deviceKey));
+    }
+
+    private const string Written = "已写入设备";
+
+    /// <summary>重新连接时自动写回的设置（按此顺序）；切换主机、板载模式这类一次性操作不记。</summary>
+    private static readonly string[] Persisted = ["SetDpi", "SetReportRate", "SetPointerSpeed", "SetSmartShift", "SetWheel", "SetFnSwap"];
+
+    private static string SettingsKey(string ownKey) => "settings:" + ownKey;
+
+    private async Task SaveSettingAsync(string ownKey, string method, string argsJson)
+    {
+        var map = await _ctx.Storage.GetAsync<Dictionary<string, string>>(SettingsKey(ownKey)) ?? new();
+        map[method] = argsJson;
+        await _ctx.Storage.SetAsync(SettingsKey(ownKey), map);
+    }
+
+    /// <summary>
+    /// 设备上线后把用户在本软件里改过的设置写回（Solaar 的做法：鼠标断电重连后部分设置会回到默认）。
+    /// 只写与设备当前值不同的项。
+    /// </summary>
+    private async Task RestoreAsync(string key, LogitechState st, HidppDeviceState ds)
+    {
+        if (!ds.Online) return;
+        var map = await _ctx.Storage.GetAsync<Dictionary<string, string>>(SettingsKey(KeyOf(key, st, ds)));
+        if (map is null) return;
+        int n = 0;
+        foreach (var m in Persisted)
+        {
+            if (!map.TryGetValue(m, out var json)) continue;
+            var a = JsonDocument.Parse(json).RootElement;
+            if (!Differs(m, a, ds)) continue;
+            await ApplyAsync(key, st, ds, m, a);
+            if (ds.Status == Written) n++;
+        }
+        if (n > 0) ds.Status = $"已恢复 {n} 项设置";
+    }
+
+    private static bool Differs(string method, JsonElement a, HidppDeviceState ds) => method switch
+    {
+        "SetDpi" => ds.Dpi is { } d && Int(a, "dpi", d.Value) != d.Value,
+        "SetReportRate" => ds.ReportRate is { } r && Int(a, "ms", r.Ms) != r.Ms,
+        "SetPointerSpeed" => ds.PointerSpeed is { } p && Int(a, "value", p) != p,
+        "SetSmartShift" => ds.SmartShift is { } s && (Bool(a, "ratchet", s.Ratchet) != s.Ratchet || Int(a, "threshold", s.Threshold) != s.Threshold),
+        "SetWheel" => ds.Wheel is { } w && (Bool(a, "hiRes", w.HiRes) != w.HiRes || Bool(a, "inverted", w.Inverted) != w.Inverted),
+        "SetFnSwap" => ds.FnSwap is { } f && Bool(a, "swap", f) != f,
+        _ => false,
+    };
+
+    /// <summary>对一个在线设备执行一项设置；结果写在 ds.Status（成功为 <see cref="Written"/>）。</summary>
+    private async Task ApplyAsync(string deviceKey, LogitechState st, HidppDeviceState ds, string method, JsonElement a)
+    {
         var dev = (byte)ds.Index;
         ds.Status = "";
 
@@ -232,17 +367,14 @@ public sealed class LogitechPlugin : IDevicePlugin
                 ds.Status = "该设备不支持此操作";
                 break;
         }
-
-        await Push(deviceKey, st);
-        return Json(st);
     }
 
-    public Task<string> GetStateAsync(string deviceKey)
-        => Task.FromResult(Json(_states.GetOrAdd(deviceKey, _ => new LogitechState())));
+    public Task<string> GetStateAsync(string deviceKey) => Task.FromResult(Json(View(deviceKey)));
 
     public Task PrepareShutdownAsync()
     {
         foreach (var cts in _pollers.Values) cts.Cancel();
+        foreach (var cts in _listeners.Values) cts.Cancel();
         return Task.CompletedTask;
     }
 
@@ -265,14 +397,15 @@ public sealed class LogitechPlugin : IDevicePlugin
             st.IsReceiver = false;
             var ds = st.Devices.FirstOrDefault(d => d.Index == Hidpp.Receiver) ?? new HidppDeviceState { Index = Hidpp.Receiver };
             st.Devices = [ds];
-            await ProbeDeviceAsync(deviceKey, st, ds);
+            await ProbeAndRestoreAsync(deviceKey, st, ds);
             if (ds.Name.Length == 0) ds.Name = st.ProductName;
         }
         else if (ping.Error is not null || ping.Data is not null)
         {
             st.IsReceiver = true;
+            await EnableConnectionNotificationsAsync(deviceKey, st);
             await ReadReceiverAsync(deviceKey, st);
-            foreach (var ds in st.Devices) await ProbeDeviceAsync(deviceKey, st, ds);
+            foreach (var ds in st.Devices) await ProbeAndRestoreAsync(deviceKey, st, ds);
             // 没有配对表的接收器只能靠 ping 发现设备：去掉没响应、也没记过名字的空槽位。
             if (!HasPairingTable(st)) st.Devices.RemoveAll(d => !d.Online && d.Name.Length == 0);
             await SaveNamesAsync(deviceKey, st);
@@ -291,6 +424,27 @@ public sealed class LogitechPlugin : IDevicePlugin
 
     private static bool HasPairingTable(LogitechState st) => st.ReceiverKind is "unifying" or "bolt";
 
+    /// <summary>探测设备；从离线变为在线时写回保存的设置。返回是否刚刚上线。</summary>
+    private async Task<bool> ProbeAndRestoreAsync(string deviceKey, LogitechState st, HidppDeviceState ds)
+    {
+        bool was = ds.Online;
+        await ProbeDeviceAsync(deviceKey, st, ds);
+        if (!ds.Online || was) return false;
+        await RestoreAsync(deviceKey, st, ds);
+        return true;
+    }
+
+    /// <summary>
+    /// 打开接收器的无线连接通知（寄存器 0x00 的 0x000100 位，Solaar 的 NotificationFlag.wireless），
+    /// 配对设备连上 / 断开时接收器才会发 0x41 通知。只追加这一位，不动其他软件设的位。
+    /// </summary>
+    private async Task EnableConnectionNotificationsAsync(string deviceKey, LogitechState st)
+    {
+        var r = await TransactAsync(deviceKey, st, Hidpp.Register(Hidpp.Receiver, Hidpp.GetRegister, Hidpp.RegNotifications, "读取通知开关"));
+        if (r.Data is not { } f || (f[5] & 0x01) != 0) return;
+        await TransactAsync(deviceKey, st, Hidpp.Register(Hidpp.Receiver, Hidpp.SetRegister, Hidpp.RegNotifications, "开启连接通知", f[4], (byte)(f[5] | 0x01), f[6]));
+    }
+
     /// <summary>接收器固件（寄存器 0xF1）与配对表（长寄存器 0xB5）。</summary>
     private async Task ReadReceiverAsync(string deviceKey, LogitechState st)
     {
@@ -300,6 +454,7 @@ public sealed class LogitechPlugin : IDevicePlugin
             st.ReceiverFirmware = $"{f[5]:X2}.{f[6]:X2}" + (build.Data is { } b ? $".B{b[5]:X2}{b[6]:X2}" : "");
 
         var cached = await _ctx.Storage.GetAsync<Dictionary<int, string>>(NamesKey(deviceKey)) ?? new();
+        var cachedIds = await _ctx.Storage.GetAsync<Dictionary<int, string>>(IdsKey(deviceKey)) ?? new();
         var old = st.Devices.ToDictionary(d => d.Index);
         var list = new List<HidppDeviceState>();
         bool bolt = st.ReceiverKind == "bolt";
@@ -323,7 +478,14 @@ public sealed class LogitechPlugin : IDevicePlugin
                     int off = bolt ? 7 : 6, len = Math.Min(nm[off - 1], nm.Length - off);
                     if (len > 0) ds.Name = Encoding.ASCII.GetString(nm, off, len).TrimEnd('\0');
                 }
+                // 序列号作子设备 Id：同一个设备换槽位重新配对后仍是同一个子设备（名字、设置跟着走）。
+                // Unifying 在扩展配对信息 0x30+n-1 的 [1..4]；Bolt 在配对信息的 [4..7]（Solaar receiver.py）。
+                byte[]? sn = bolt ? p[8..12]
+                    : (await TransactAsync(deviceKey, st, LongRegister(0x30 + n - 1))).Data is { } x ? x[5..9] : null;
+                if (sn is not null && sn.Any(b => b != 0)) ds.Id = Convert.ToHexString(sn);
             }
+            // 读不到序列号：沿用上次的 Id，没有就按槽位。
+            if (ds.Id.Length == 0) ds.Id = cachedIds.GetValueOrDefault(n) ?? $"slot{n}";
             if (ds.Name.Length == 0 && cached.TryGetValue(n, out var cn)) ds.Name = cn;
             list.Add(ds);
         }
@@ -416,11 +578,11 @@ public sealed class LogitechPlugin : IDevicePlugin
         {
             // [电量%, 等级位(1 危急/2 低/4 良好/8 满), 充电状态, 外接电源]；部分设备电量% 为 0、只报等级。
             int? pct = u[4] > 0 ? u[4] : (u[5] & 8) != 0 ? 100 : (u[5] & 4) != 0 ? 50 : (u[5] & 2) != 0 ? 20 : (u[5] & 1) != 0 ? 5 : null;
-            ds.Battery = new BatteryState { Percent = pct, Estimated = u[4] == 0, Charging = u[6] is 1 or 2, Status = HidppParse.UnifiedCharging(u[6]) };
+            ds.Battery = new BatteryState { Percent = pct, Estimated = u[4] == 0, Charging = u[6] is 1 or 2, Full = u[6] == 3, Status = HidppParse.UnifiedCharging(u[6]) };
         }
         else if (Feat(deviceKey, dev, Feature.BatteryStatus) is { } fb &&
                  await TransactAsync(deviceKey, st, Hidpp.Call(dev, fb, 0, "读取电量")) is { Data: { } b })
-            ds.Battery = new BatteryState { Percent = b[4], Charging = b[6] is 1 or 2 or 4, Status = HidppParse.BatteryStatus(b[6]) };
+            ds.Battery = new BatteryState { Percent = b[4], Charging = b[6] is 1 or 2 or 4, Full = b[6] == 3, Status = HidppParse.BatteryStatus(b[6]) };
         else if (Feat(deviceKey, dev, Feature.BatteryVoltage) is { } fv &&
                  await TransactAsync(deviceKey, st, Hidpp.Call(dev, fv, 0, "读取电压")) is { Data: { } v })
         {
@@ -517,7 +679,11 @@ public sealed class LogitechPlugin : IDevicePlugin
     {
         var names = st.Devices.Where(d => d.Name.Length > 0).ToDictionary(d => d.Index, d => d.Name);
         if (names.Count > 0) await _ctx.Storage.SetAsync(NamesKey(deviceKey), names);
+        var ids = st.Devices.Where(d => d.Id.Length > 0).ToDictionary(d => d.Index, d => d.Id);
+        if (ids.Count > 0) await _ctx.Storage.SetAsync(IdsKey(deviceKey), ids);
     }
+
+    private static string IdsKey(string deviceKey) => "ids:" + deviceKey;
 
     /// <summary>定时刷新在线设备的电量，并重新 ping 离线设备（休眠的鼠标被唤醒后自动出现）。</summary>
     private void StartPoll(string deviceKey, LogitechState st)
@@ -536,22 +702,158 @@ public sealed class LogitechPlugin : IDevicePlugin
                 {
                     if (ds.Online)
                     {
-                        var before = ds.Battery?.Percent;
+                        var before = ds.Battery;
                         var ping = await TransactAsync(deviceKey, st, Hidpp.Ping((byte)ds.Index));
-                        if (ping.Data is null) { ds.Online = false; ds.Status = "设备未连接"; changed = true; continue; }
+                        if (ping.Data is null)
+                        {
+                            ds.Online = false; ds.Status = "设备未连接"; changed = true;
+                            await OsdAsync(deviceKey, st, ds, OsdKind.Disconnected, "已断开连接");
+                            continue;
+                        }
                         await ReadBattery(deviceKey, st, ds);
-                        changed |= ds.Battery?.Percent != before;
+                        changed |= ds.Battery?.Percent != before?.Percent || ds.Battery?.Charging != before?.Charging;
+                        await BatteryEventsAsync(deviceKey, st, ds, before);
                     }
                     else if (st.IsReceiver && ds.Status != "未配对")
                     {
-                        await ProbeDeviceAsync(deviceKey, st, ds);
-                        changed |= ds.Online;
+                        // 通知漏掉时的兜底：休眠唤醒的设备在这里被发现。
+                        if (await ProbeAndRestoreAsync(deviceKey, st, ds)) { changed = true; await ConnectedOsdAsync(deviceKey, st, ds); }
                     }
                 }
                 if (changed) await Push(deviceKey, st);
             }
         }, cts.Token);
     }
+
+    // —— 通知：配对设备连接 / 断开（接收器 0x41）、电量变化（0x1000 / 0x1004 事件）——
+
+    /// <summary>
+    /// 后台监听设备主动发来的报告。每轮只占用设备锁一小会儿（每个集合最多等 50ms），
+    /// 一问一答可以穿插进来；一问一答期间读到的通知放进收件箱，在这里统一处理。
+    /// </summary>
+    private void StartListener(string deviceKey, LogitechState st)
+    {
+        var cts = new CancellationTokenSource();
+        if (_listeners.TryRemove(deviceKey, out var old)) old.Cancel();
+        _listeners[deviceKey] = cts;
+        var inbox = _inbox.GetOrAdd(deviceKey, _ => new());
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                while (!cts.IsCancellationRequested)
+                {
+                    if (!st.Authorized || !st.Connected) { await Task.Delay(1000, cts.Token); continue; }
+                    var link = _links.GetValueOrDefault(deviceKey) ?? new Link(false, 0);
+                    string[] roles = link.HasShort ? ["short", "long"] : ["long"];
+                    bool failed = false;
+                    var gate = _locks.GetOrAdd(deviceKey, _ => new SemaphoreSlim(1, 1));
+                    await gate.WaitAsync(cts.Token);
+                    try
+                    {
+                        foreach (var role in roles)
+                            for (int i = 0, wait = 50; i < 16; i++, wait = 1)
+                            {
+                                var r = await _ctx.Device.ReadInputAsync(deviceKey, wait, role);
+                                if (r.Status == DeviceIoStatus.Ok && r.Data is { } d) { inbox.Enqueue(d); continue; }
+                                failed |= r.Status is not (DeviceIoStatus.Ok or DeviceIoStatus.Timeout);
+                                break;
+                            }
+                    }
+                    finally { gate.Release(); }
+
+                    while (inbox.TryDequeue(out var rep))
+                        try { await OnReportAsync(deviceKey, st, rep); }
+                        catch (Exception) { /* 单条通知处理失败不影响监听 */ }
+                    if (failed) await Task.Delay(1000, cts.Token);
+                }
+            }
+            catch (OperationCanceledException) { }
+        }, cts.Token);
+    }
+
+    private async Task OnReportAsync(string deviceKey, LogitechState st, byte[] rep)
+    {
+        if (rep.Length < 7 || rep[0] is not (Hidpp.ShortId or Hidpp.LongId)) return;
+        var ds = st.Devices.FirstOrDefault(d => d.Index == rep[1]);
+
+        // 0x41 连接通知：[10 槽位 41 协议 标志 wpid-lo wpid-hi]，标志位 0x40 = 链路断开（Solaar notifications.py）。
+        if (st.IsReceiver && rep[2] == Hidpp.DeviceConnection)
+        {
+            bool lost = (rep[4] & 0x40) != 0;
+            if (ds is null)
+            {
+                if (!lost) await RefreshAsync(deviceKey, st); // 新配对的设备
+                return;
+            }
+            if (lost)
+            {
+                if (!ds.Online) return;
+                ds.Online = false;
+                ds.Status = "设备未连接";
+                await Push(deviceKey, st);
+                await OsdAsync(deviceKey, st, ds, OsdKind.Disconnected, "已断开连接");
+                return;
+            }
+            if (ds.Online) return;
+            await Task.Delay(300); // 刚连上的设备立刻 ping 常常没响应
+            if (!await ProbeAndRestoreAsync(deviceKey, st, ds)) return;
+            await Push(deviceKey, st);
+            await ConnectedOsdAsync(deviceKey, st, ds);
+            return;
+        }
+
+        // HID++ 2.0 事件（software id = 0）：电池 Feature 的电量 / 充电状态变化。
+        if (ds is { Online: true } && (rep[3] & 0x0F) == 0 &&
+            (rep[2] == Feat(deviceKey, rep[1], Feature.UnifiedBattery) || rep[2] == Feat(deviceKey, rep[1], Feature.BatteryStatus)))
+        {
+            var before = ds.Battery;
+            await ReadBattery(deviceKey, st, ds);
+            await Push(deviceKey, st);
+            await BatteryEventsAsync(deviceKey, st, ds, before);
+        }
+    }
+
+    private const int LowBattery = 15, CriticalBattery = 5;
+
+    /// <summary>按电量前后变化弹提示：跌破 15% / 5%、开始充电、充满。首次读到电量时不提示。</summary>
+    private async Task BatteryEventsAsync(string deviceKey, LogitechState st, HidppDeviceState ds, BatteryState? before)
+    {
+        if (before is null || ds.Battery is not { } now) return;
+        if (now.Full && !before.Full)
+            await OsdAsync(deviceKey, st, ds, OsdKind.Charged, "电池已充满", 100);
+        else if (now.Charging && !before.Charging)
+            await OsdAsync(deviceKey, st, ds, OsdKind.Charging, now.Percent is { } cp ? $"正在充电 · {cp}%" : "正在充电", now.Percent);
+        else if (!now.Charging && now.Percent is { } p && before.Percent is { } bp)
+        {
+            if (p < CriticalBattery && bp >= CriticalBattery)
+                await OsdAsync(deviceKey, st, ds, OsdKind.BatteryLow, $"电量严重不足（{p}%），请立即充电", p);
+            else if (p < LowBattery && bp >= LowBattery)
+                await OsdAsync(deviceKey, st, ds, OsdKind.BatteryLow, $"电量低（{p}%），请及时充电", p);
+        }
+    }
+
+    private Task ConnectedOsdAsync(string deviceKey, LogitechState st, HidppDeviceState ds) =>
+        OsdAsync(deviceKey, st, ds, OsdKind.Connected,
+            ds.Battery?.Percent is { } p ? $"已连接 · 电量 {p}%" : "已连接", ds.Battery?.Percent, KindGlyph(ds.Kind));
+
+    /// <summary>屏幕提示发到设备自己的键上（配对设备是子设备键），核心据此显示用户给它起的名字。</summary>
+    private Task OsdAsync(string deviceKey, LogitechState st, HidppDeviceState ds, OsdKind kind, string text, int? percent = null, string? glyph = null)
+    {
+        if (st.IsReceiver && ds.Id.Length == 0) return Task.CompletedTask;
+        return _ctx.Notify.ShowOsdAsync(KeyOf(deviceKey, st, ds),
+            new OsdContent { Kind = kind, Text = text, Percent = percent, Glyph = glyph });
+    }
+
+    /// <summary>Segoe Fluent Icons：鼠标 / 键盘 / 耳机 / 手柄 …，其他用默认图标。</summary>
+    private static string? KindGlyph(string kind) => kind switch
+    {
+        "mouse" or "trackball" or "touchpad" => "",
+        "keyboard" or "numpad" => "",
+        "headset" => "",
+        "gamepad" or "joystick" or "wheel" => "",
+        _ => null,
+    };
 
     // —— 传输 ——
 
@@ -594,9 +896,14 @@ public sealed class LogitechPlugin : IDevicePlugin
         await gate.WaitAsync();
         try
         {
+            var inbox = _inbox.GetOrAdd(deviceKey, _ => new());
             foreach (var role in roles)
                 for (int i = 0; i < 32; i++)
-                    if ((await _ctx.Device.ReadInputAsync(deviceKey, 1, role)).Status != DeviceIoStatus.Ok) break;
+                {
+                    var pending = await _ctx.Device.ReadInputAsync(deviceKey, 1, role);
+                    if (pending.Status != DeviceIoStatus.Ok) break;
+                    if (pending.Data is { } p && IsNotification(p)) inbox.Enqueue(p);
+                }
 
             var data = req.Data;
             string writeRole = "long";
@@ -619,12 +926,17 @@ public sealed class LogitechPlugin : IDevicePlugin
                     if (r.Data is not { Length: >= 7 } rep) continue;
                     if (req.ErrorCode(rep) is { } code) return new Hidpp.Reply(null, code, rep[2] == Hidpp.Error10, false);
                     if (req.IsReply(rep)) return new Hidpp.Reply(rep, null, false, false);
+                    if (IsNotification(rep)) inbox.Enqueue(rep);
                 }
             }
             return Hidpp.Reply.Timeout;
         }
         finally { gate.Release(); }
     }
+
+    /// <summary>0x41 连接通知，或 software id 为 0 的 2.0 事件（其他软件 / 本插件的回包不算）。</summary>
+    private static bool IsNotification(byte[] r) =>
+        r.Length >= 7 && (r[2] == Hidpp.DeviceConnection || (r[0] == Hidpp.LongId && r[2] != Hidpp.Error20 && (r[3] & 0x0F) == 0));
 
     private static void Fail(LogitechState st, DeviceIoStatus s, string what)
     {
@@ -639,7 +951,15 @@ public sealed class LogitechPlugin : IDevicePlugin
         if (s is DeviceIoStatus.DeviceGone) st.Connected = false;
     }
 
-    private Task Push(string deviceKey, LogitechState st) => _ctx.PushStateAsync(deviceKey, Json(st));
+    /// <summary>推送接收器 / 直连设备的状态；接收器还要推给每个子设备页，并同步子设备列表。</summary>
+    private async Task Push(string deviceKey, LogitechState st)
+    {
+        await _ctx.PushStateAsync(deviceKey, Json(st));
+        if (!st.IsReceiver) return;
+        foreach (var ds in st.Devices.Where(d => d.Id.Length > 0).ToList())
+            await _ctx.PushStateAsync(DeviceKeys.Child(deviceKey, ds.Id), Json(ChildView(st, ds)));
+        await PublishAsync(deviceKey, st);
+    }
 
     private static int Int(JsonElement a, string p, int dflt) =>
         a.ValueKind == JsonValueKind.Object && a.TryGetProperty(p, out var v) && v.TryGetInt32(out var i) ? i : dflt;

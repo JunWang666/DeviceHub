@@ -153,7 +153,8 @@ public sealed class PluginManager
     public DeviceMatch? MatchDevice(string pluginId, DeviceInfo device)
     {
         var m = ActiveManifest(pluginId);
-        if (m is null || LoadState(pluginId).Disabled) return null;
+        // 子设备不按 manifest 匹配：它只属于发布它的插件，也没有可声明的通道。
+        if (m is null || device.IsChild || LoadState(pluginId).Disabled) return null;
         return m.Devices.FirstOrDefault(d =>
             string.Equals(d.Bus, device.Bus.ToString(), StringComparison.OrdinalIgnoreCase) &&
             (d.Vid == 0 || d.Vid == device.Vid) &&

@@ -47,11 +47,22 @@
                 </Button>
             </Grid>
 
-            <!-- 接收器：选择配对设备 -->
-            <tk:SettingsCard Header="配对设备" Description="接收器上已配对的设备" Visibility="{x:Bind Vm.ShowDevicePicker, Mode=OneWay}">
-                <tk:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE88E;"/></tk:SettingsCard.HeaderIcon>
-                <ComboBox MinWidth="220" ItemsSource="{x:Bind Vm.DeviceNames, Mode=OneWay}" SelectedIndex="{x:Bind Vm.SelectedDevice, Mode=TwoWay}"/>
-            </tk:SettingsCard>
+            <!-- 接收器：配对表。每个配对设备在左侧导航里是接收器下的独立设备，设置在那里改 -->
+            <StackPanel Visibility="{x:Bind Vm.ShowPaired, Mode=OneWay}" Spacing="{StaticResource CardSpacing}">
+                <TextBlock Text="配对设备" Style="{StaticResource GroupHeaderStyle}" Margin="1,8,0,2"/>
+                <TextBlock Text="在左侧接收器下选择设备，可调整它的 DPI、滚轮等设置。" Style="{StaticResource CaptionTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="1,0,0,6" TextWrapping="Wrap"/>
+                <ItemsRepeater ItemsSource="{x:Bind Vm.PairedRows, Mode=OneWay}">
+                    <ItemsRepeater.Layout><StackLayout Spacing="{StaticResource CardSpacing}"/></ItemsRepeater.Layout>
+                    <ItemsRepeater.ItemTemplate>
+                        <DataTemplate x:DataType="local:PairedRow">
+                            <tk:SettingsCard Header="{x:Bind Title}" Description="{x:Bind Detail}" Opacity="{x:Bind Opacity}">
+                                <tk:SettingsCard.HeaderIcon><FontIcon Glyph="{x:Bind Glyph}"/></tk:SettingsCard.HeaderIcon>
+                            </tk:SettingsCard>
+                        </DataTemplate>
+                    </ItemsRepeater.ItemTemplate>
+                </ItemsRepeater>
+            </StackPanel>
             <InfoBar IsOpen="{x:Bind Vm.ShowNoDevices, Mode=OneWay}" Severity="Informational" IsClosable="False"
                      Title="没有配对设备" Message="这个接收器上没有已配对的设备。"/>
 

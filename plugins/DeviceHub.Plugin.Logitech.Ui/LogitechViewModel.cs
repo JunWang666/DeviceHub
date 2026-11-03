@@ -6,7 +6,7 @@ using Microsoft.UI.Dispatching;
 
 namespace DeviceHub.Plugin.Logitech.Ui;
 
-/// <summary>罗技页面的 ViewModel：状态由后端推送，操作经 bridge 转发。接收器上有多个设备时按所选设备显示。</summary>
+/// <summary>罗技页面的 ViewModel：状态由后端推送，操作经 bridge 转发。接收器页列出配对表，每个配对设备有自己的页面（子设备）。</summary>
 public sealed class LogitechViewModel : INotifyPropertyChanged
 {
     private readonly IPluginUiBridge _bridge;
@@ -17,7 +17,6 @@ public sealed class LogitechViewModel : INotifyPropertyChanged
     private static readonly JsonSerializerOptions Read = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true };
 
     public LogitechStateDto State { get; private set; } = new();
-    private int _selected;
 
     public LogitechViewModel(IPluginUiBridge bridge)
     {
@@ -36,8 +35,8 @@ public sealed class LogitechViewModel : INotifyPropertyChanged
         try { Apply(await _bridge.GetStateAsync()); } catch (Exception ex) { _error = "读取失败：" + ex.Message; OnChanged(nameof(Status)); }
     }
 
-    private HidppDeviceDto? D => _selected >= 0 && _selected < State.Devices.Count ? State.Devices[_selected] : null;
-    private bool Editable => State.Authorized && D?.Online == true;
+    /// <summary>本页管理的设备：直连设备或子设备页（接收器上的配对设备）只有一个；接收器页没有，只列配对表。</summary>
+    private HidppDeviceDto? D => State.IsReceiver ? null : State.Devices.FirstOrDefault();
 
     // —— 概览 ——
 
@@ -48,26 +47,31 @@ public sealed class LogitechViewModel : INotifyPropertyChanged
         "nano" => "Nano 接收器", _ => "罗技接收器",
     };
     public string ConnectionText => !State.Authorized ? "未授权"
-        : !State.Connected ? "未连接"
+        : !State.Connected ? (State.IsChild && State.Link.Length > 0 ? $"未连接 · {State.Link}" : "未连接")
         : State.IsReceiver ? $"已连接 · {State.Link} · {State.Devices.Count} 个已配对设备" + (State.ReceiverFirmware.Length > 0 ? $" · 固件 {State.ReceiverFirmware}" : "")
+        : State.IsChild ? $"已连接 · 经 {State.Link}"
         : $"已连接 · {State.Link}";
     public bool ShowUnauthorized => !State.Authorized;
     public string HeaderGlyph => State.IsReceiver ? "" : KindGlyph(D?.Kind);
 
-    public bool ShowDevicePicker => State.IsReceiver && State.Devices.Count > 0;
+    // —— 接收器页：配对表（每个配对设备在左侧有自己的页面）——
+
+    public bool ShowPaired => State.IsReceiver && State.Devices.Count > 0;
     public bool ShowNoDevices => State.Authorized && State.IsReceiver && State.Devices.Count == 0 && State.LastReadAt is not null;
-    public List<string> DeviceNames => State.Devices.Select(d =>
-        $"{(d.Name.Length > 0 ? d.Name : $"设备 {d.Index}")}{(d.Online ? "" : "（未连接）")}").ToList();
-    public int SelectedDevice
-    {
-        get => State.Devices.Count == 0 ? -1 : Math.Clamp(_selected, 0, State.Devices.Count - 1);
-        set
+    public List<PairedRow> PairedRows => !State.IsReceiver ? new()
+        : State.Devices.Select(d => new PairedRow
         {
-            if (value < 0 || value == _selected || _applying) return;
-            _selected = value;
-            NotifyAll();
-        }
-    }
+            Glyph = KindGlyph(d.Kind),
+            Title = d.Name.Length > 0 ? d.Name : $"设备 {d.Index}",
+            Detail = string.Join(" · ", new[]
+            {
+                $"槽位 {d.Index}",
+                KindText(d.Kind),
+                d.Online ? (d.Battery?.Percent is { } p ? $"电量 {p}%" : "已连接") : d.Status.Length > 0 ? d.Status : "未连接",
+                d.Wpid.Length > 0 ? $"WPID {d.Wpid}" : "",
+            }.Where(s => s.Length > 0)),
+            Opacity = d.Online ? 1 : 0.6,
+        }).ToList();
 
     public bool HasDevice => D is not null;
     public bool DeviceOnline => D?.Online == true;
@@ -278,11 +282,7 @@ public sealed class LogitechViewModel : INotifyPropertyChanged
         {
             var s = JsonSerializer.Deserialize<LogitechStateDto>(json, Read);
             if (s is null) return;
-            // 设备列表变化时按设备号保持选中项。
-            var keep = D?.Index;
             State = s;
-            _selected = keep is { } k && s.Devices.FindIndex(d => d.Index == k) is >= 0 and var i ? i
-                : Math.Max(0, s.Devices.FindIndex(d => d.Online));
             _error = "";
             NotifyAll();
         }

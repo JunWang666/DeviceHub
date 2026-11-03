@@ -56,10 +56,20 @@ public sealed class LogitechStateDto
     public bool Connected { get; set; }
     public string Status { get; set; } = "";
     public bool IsReceiver { get; set; }
+    public bool IsChild { get; set; }
     public string ProductName { get; set; } = "";
     public string ReceiverKind { get; set; } = "";
     public string ReceiverFirmware { get; set; } = "";
     public string Link { get; set; } = "";
     public List<HidppDeviceDto> Devices { get; set; } = new();
     public DateTimeOffset? LastReadAt { get; set; }
+}
+
+/// <summary>接收器页配对表的一行。</summary>
+public sealed class PairedRow
+{
+    public string Glyph { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Detail { get; set; } = "";
+    public double Opacity { get; set; } = 1;
 }

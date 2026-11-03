@@ -125,6 +125,22 @@ public sealed class PermissionService
         _log.LogInformation("授予 {Plugin} → {Device}: {Scope}", pluginId, deviceKey, scope);
     }
 
+    /// <summary>
+    /// 子设备继承父设备的 Always 授权：授权记录让子设备也能被改名、记住名字、显示接入时间。
+    /// 父设备没有 Always 授权时返回 false（插件不能给未授权的设备发布子设备）。
+    /// </summary>
+    public bool InheritGrant(string pluginId, string parentKey, string childKey)
+    {
+        if (GetGrant(pluginId, parentKey) != AccessScope.Always) return false;
+        var k = K(pluginId, childKey);
+        if (_grants.TryAdd(k, AccessScope.Always))
+        {
+            _grantedAt[k] = DateTimeOffset.Now;
+            Save();
+        }
+        return true;
+    }
+
     public void Respond(string requestId, AccessScope scope)
     {
         if (_pending.TryGetValue(requestId, out var tcs)) tcs.TrySetResult(scope);
@@ -141,6 +157,10 @@ public sealed class PermissionService
             _log.LogInformation("撤销授权 {Plugin} → {Device}", pluginId, deviceKey);
             GrantRevoked?.Invoke(pluginId, deviceKey);
         }
+        // 子设备的授权随父设备一起撤销。
+        if (!DeviceKeys.IsChild(deviceKey))
+            foreach (var k in _grants.Keys.Where(k => k.StartsWith(K(pluginId, deviceKey) + DeviceKeys.ChildSeparator, StringComparison.Ordinal)).ToList())
+                Revoke(pluginId, k.Split('|', 2)[1]);
     }
 
     private void Load()
