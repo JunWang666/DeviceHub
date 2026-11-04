@@ -48,6 +48,7 @@ public sealed class AgentApiService : IAgentApi
         if (owner is not null)
         {
             _perms.RememberName(owner, d.DeviceKey, defaultName);
+            _perms.RememberGlyph(owner, d.DeviceKey, desc?.Glyph);
             custom = _perms.GetNames(owner, d.DeviceKey).CustomName;
         }
         return d with
@@ -59,6 +60,7 @@ public sealed class AgentApiService : IAgentApi
             DisplayName = custom ?? defaultName,
             DefaultName = defaultName,
             Subtitle = desc?.Subtitle,
+            Glyph = Glyphs.IsValid(desc?.Glyph) ? desc!.Glyph : owner is null ? null : _perms.GetGlyph(owner, d.DeviceKey),
         };
     }
 
@@ -123,6 +125,7 @@ public sealed class AgentApiService : IAgentApi
                     DefaultName = defaultName,
                     CustomName = custom,
                     DeviceConnected = dev is not null,
+                    DeviceGlyph = _perms.GetGlyph(g.PluginId, g.DeviceKey),
                 };
             })
             .OrderByDescending(g => g.GrantedAt)
@@ -167,13 +170,28 @@ public sealed class AgentApiService : IAgentApi
         }
     }
 
-    public async Task<string> InstallPluginPackageAsync(string packagePath)
+    /// <summary>安装并立即切换：先停旧版本刷写状态，装好后启动新版本后端；安装失败时把旧版本重新启动起来。</summary>
+    public async Task<PluginInstallResult> InstallPluginPackageAsync(string packagePath)
     {
         var id = PeekId(packagePath);
-        if (id is not null) await _supervisor.StopAsync(id); // 已在运行的旧版先停，刷写状态
-        var r = _plugins.InstallPackage(packagePath);
-        if (r.Activated) await _supervisor.StartAsync(r.Id);  // 新插件立即启动后端；UI 需重启界面后加载
-        return r.Id;
+        if (id is not null) await _supervisor.StopAsync(id);
+        try
+        {
+            var r = _plugins.InstallPackage(packagePath);
+            id = r.Id;
+            return new PluginInstallResult { Id = r.Id, Version = r.Version, Previous = r.Previous };
+        }
+        finally
+        {
+            if (id is not null) await _supervisor.StartAsync(id);
+        }
+    }
+
+    public async Task<string?> RollbackPluginAsync(string pluginId)
+    {
+        await _supervisor.StopAsync(pluginId);
+        try { return _plugins.Rollback(pluginId); }
+        finally { await _supervisor.StartAsync(pluginId); }
     }
 
     public Task<UsbTopology> GetUsbTopologyAsync() => Task.Run(Native.NativeUsb.Scan);

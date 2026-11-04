@@ -16,6 +16,13 @@ public sealed partial class LogitechPage : UserControl
         Loaded += async (_, _) => await Vm.LoadAsync();
     }
 
+    private void Sections_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
+    {
+        bool test = sender.SelectedItem == TestTab;
+        SettingsPanel.Visibility = test ? Visibility.Collapsed : Visibility.Visible;
+        TestPanel.Visibility = test ? Visibility.Visible : Visibility.Collapsed;
+    }
+
     private void Refresh_Click(object sender, RoutedEventArgs e) => Vm.Refresh();
     private void StartPairing_Click(object sender, RoutedEventArgs e) => Vm.StartPairing();
     private void StopPairing_Click(object sender, RoutedEventArgs e) => Vm.StopPairing();

@@ -1,7 +1,7 @@
 {
   "id": "com.devicehub.gamesir",
   "displayName": "GameSir 手柄",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "sdkVersion": "1.0",
   "backendAssembly": "backend/DeviceHub.Plugin.GameSir.dll",
   "backendType": "DeviceHub.Plugin.GameSir.GameSirPlugin",

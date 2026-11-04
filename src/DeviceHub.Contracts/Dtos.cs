@@ -54,6 +54,8 @@ public sealed record DeviceInfo
     public DateTimeOffset? GrantedAt { get; init; }
     /// <summary>接管插件给出的副标题（如"2.4G 接收器 · 面板灯效"），没有则为空。</summary>
     public string? Subtitle { get; init; }
+    /// <summary>接管插件指定的图标（已校验），没有则为空、由界面用默认图标。</summary>
+    public string? Glyph { get; init; }
     /// <summary>当前连接状态。</summary>
     public bool Connected { get; init; }
     /// <summary>是否已有插件正在管理（供 UI 绑定）。</summary>
@@ -141,6 +143,8 @@ public sealed record PluginInfo
     public required string Id { get; init; }
     public required string DisplayName { get; init; }
     public required string Version { get; init; }
+    /// <summary>上一个版本（升级或安装前的版本），可回滚到它；没有为 null。</summary>
+    public string? PreviousVersion { get; init; }
     public required PluginRunState State { get; init; }
     public int RestartCount { get; init; }
     /// <summary>插件进程的专用内存（不含与其他进程共享的运行时映像，接近任务管理器的"内存"列）。</summary>
@@ -150,6 +154,14 @@ public sealed record PluginInfo
     public string? UiAssemblyPath { get; init; }
     /// <summary>UI 页面的入口类型全名（实现 IPluginPage）。</summary>
     public string? UiPageTypeName { get; init; }
+}
+
+/// <summary>安装插件包的结果。Previous 为安装前的版本（新插件为 null）。</summary>
+public sealed record PluginInstallResult
+{
+    public required string Id { get; init; }
+    public required string Version { get; init; }
+    public string? Previous { get; init; }
 }
 
 /// <summary>授权请求（Agent → App，触发弹窗）。</summary>
@@ -180,6 +192,8 @@ public sealed record GrantInfo
     /// <summary>授权（接入）时间；旧记录可能没有。</summary>
     public DateTimeOffset? GrantedAt { get; init; }
     public bool DeviceConnected { get; init; }
+    /// <summary>设备上次在线时插件给的图标，离线时侧边栏照样用它。</summary>
+    public string? DeviceGlyph { get; init; }
 }
 
 /// <summary>插件提供的一条设备信息（如"连接方式：2.4G 接收器"）。</summary>
@@ -193,7 +207,16 @@ public sealed record DeviceDescription
 {
     public string? Title { get; init; }
     public string? Subtitle { get; init; }
+    /// <summary>侧边栏和列表里的设备图标：Segoe Fluent Icons 的一个字符（如耳机 ""）。为空或不是该字体的私用区字符时用默认图标。</summary>
+    public string? Glyph { get; init; }
     public IReadOnlyList<DeviceDetailItem> Details { get; init; } = Array.Empty<DeviceDetailItem>();
+}
+
+/// <summary>插件给的图标字符检查：只接受 Segoe Fluent Icons 所在的私用区（E000–F8FF）的单个字符。</summary>
+public static class Glyphs
+{
+    public const string Device = "";
+    public static bool IsValid(string? g) => g is { Length: 1 } && g[0] is >= '' and <= '';
 }
 
 /// <summary>设备详情弹窗所需的全部信息（核心信息 + 插件描述）。</summary>

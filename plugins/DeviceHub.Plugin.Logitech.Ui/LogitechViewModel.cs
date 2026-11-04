@@ -40,19 +40,14 @@ public sealed class LogitechViewModel : INotifyPropertyChanged
 
     // —— 概览 ——
 
-    public string Title => State.IsReceiver ? ReceiverTitle : D?.Name is { Length: > 0 } n ? n : State.ProductName;
-    private string ReceiverTitle => State.ReceiverKind switch
-    {
-        "unifying" => "Unifying 接收器", "bolt" => "Bolt 接收器", "lightspeed" => "LIGHTSPEED 接收器",
-        "nano" => "Nano 接收器", _ => "罗技接收器",
-    };
     public string ConnectionText => !State.Authorized ? "未授权"
         : !State.Connected ? (State.IsChild && State.Link.Length > 0 ? $"未连接 · {State.Link}" : "未连接")
         : State.IsReceiver ? $"已连接 · {State.Link} · {State.Devices.Count} 个已配对设备" + (State.ReceiverFirmware.Length > 0 ? $" · 固件 {State.ReceiverFirmware}" : "")
         : State.IsChild ? $"已连接 · 经 {State.Link}"
         : $"已连接 · {State.Link}";
+    /// <summary>页头下的一行：连接方式 + 设备型号、协议、固件等（设备名由 DeviceHub 页头显示）。</summary>
+    public string SummaryText => DeviceInfoText.Length > 0 ? $"{ConnectionText} · {DeviceInfoText}" : ConnectionText;
     public bool ShowUnauthorized => !State.Authorized;
-    public string HeaderGlyph => State.IsReceiver ? "" : KindGlyph(D?.Kind);
 
     // —— 接收器页：配对表（每个配对设备在左侧有自己的页面）——
 
@@ -87,10 +82,9 @@ public sealed class LogitechViewModel : INotifyPropertyChanged
 
     public bool HasDevice => D is not null;
     public bool IsPointer => D?.Kind is "mouse" or "trackball";
+    public bool IsNotPointer => !IsPointer;
     public bool DeviceOnline => D?.Online == true;
     public bool DeviceOffline => D is { Online: false };
-    public string DeviceName => D is null ? "" : D.Name.Length > 0 ? D.Name : $"设备 {D.Index}";
-    public string DeviceGlyph => KindGlyph(D?.Kind);
     public string DeviceInfoText
     {
         get

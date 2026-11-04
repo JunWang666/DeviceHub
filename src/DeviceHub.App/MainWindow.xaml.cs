@@ -47,6 +47,7 @@ public sealed partial class MainWindow : Window
         {
             var agent = _state.Client.Agent!;
             Console.WriteLine($"SELFTEST: 新设备={_state.NewDevices.Count} 正在管理={_state.ManagedDevices.Count}（离线 {_state.ManagedDevices.Count(d => !d.Connected)}） 授权记录={(await agent.ListGrantsAsync()).Count}");
+            Console.WriteLine("SELFTEST: 侧边栏图标 " + string.Join(", ", _state.ManagedDevices.Select(d => $"{d.DeviceKey}={(Glyphs.IsValid(d.Glyph) ? ((int)d.Glyph![0]).ToString("X4") : "默认")}")));
             var usb = await agent.GetUsbTopologyAsync();
             var usbIssues = new List<(Services.UsbRow, UsbIssue)>();
             var usbRows = Services.UsbTreeBuilder.Build(usb, showEmptyPorts: false, usbIssues);
@@ -170,7 +171,7 @@ public sealed partial class MainWindow : Window
     {
         Content = dev.DisplayName,
         Tag = "dev:" + dev.DeviceKey,
-        Icon = new FontIcon { Glyph = "" },
+        Icon = new FontIcon { Glyph = Glyphs.IsValid(dev.Glyph) ? dev.Glyph : Glyphs.Device }, // 插件可指定图标（如 AirPods 用耳机）
         Opacity = dev.Connected ? 1 : 0.55,
     };
 

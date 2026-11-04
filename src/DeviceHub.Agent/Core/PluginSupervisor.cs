@@ -62,6 +62,7 @@ public sealed class PluginSupervisor : IDisposable
                 Id = id,
                 DisplayName = m?.DisplayName ?? id,
                 Version = m?.Version ?? "?",
+                PreviousVersion = _plugins.LoadState(id).Previous is { Length: > 0 } prev && Directory.Exists(Path.Combine(_plugins.Root, id, prev)) ? prev : null,
                 State = e?.State ?? (_plugins.LoadState(id).Disabled ? PluginRunState.Disabled : PluginRunState.Stopped),
                 RestartCount = e?.RestartCount ?? 0,
                 MemoryBytes = mem,

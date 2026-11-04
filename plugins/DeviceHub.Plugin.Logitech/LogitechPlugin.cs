@@ -161,7 +161,11 @@ public sealed class LogitechPlugin : IDevicePlugin
         details.Add(new("已支持", "电量、DPI、回报率、指针速度、SmartShift、滚轮方向/高精度、Fn 反转、Easy-Switch、板载配置"));
         details.Add(new("尚未支持", "灯效、按键重映射、宏、配对新设备、扩展 DPI/回报率（0x2202/0x8061）"));
         details.Add(new("注意", "G HUB / Logi Options+ 同时运行时会互相覆盖设置，建议先退出"));
-        return Task.FromResult<DeviceDescription?>(new DeviceDescription { Title = title, Subtitle = subtitle, Details = details });
+        return Task.FromResult<DeviceDescription?>(new DeviceDescription
+        {
+            Title = title, Subtitle = subtitle, Details = details,
+            Glyph = st.IsReceiver ? "" : KindGlyph(st.Devices.FirstOrDefault()?.Kind ?? ""), // 接收器用 USB 图标
+        });
     }
 
     private DeviceDescription? DescribeChild(string deviceKey)
@@ -182,7 +186,7 @@ public sealed class LogitechPlugin : IDevicePlugin
         if (ds.Features.Count > 0) details.Add(new("Feature", string.Join("、", ds.Features.Select(f => f.Name))));
         details.Add(new("最近读取", st.LastReadAt is { } t ? t.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") : "尚未读取"));
         details.Add(new("设置恢复", "在本软件里改过的 DPI、回报率、滚轮等设置会在设备重新连接时自动写回"));
-        return new DeviceDescription { Title = ChildName(ds), Subtitle = subtitle, Details = details };
+        return new DeviceDescription { Title = ChildName(ds), Subtitle = subtitle, Details = details, Glyph = KindGlyph(ds.Kind) };
     }
 
     public Task DetachAsync(string deviceKey)

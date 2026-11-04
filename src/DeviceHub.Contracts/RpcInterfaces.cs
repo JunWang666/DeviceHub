@@ -44,8 +44,11 @@ public interface IAgentApi
     /// <summary>触发 UI 重启（Agent 不重启）：先应用待定的插件更新并重启其后端。</summary>
     Task RequestUiRestartAsync();
 
-    /// <summary>安装插件包（.dhplugin），返回插件 Id。插件 UI 在重启界面后生效。</summary>
-    Task<string> InstallPluginPackageAsync(string packagePath);
+    /// <summary>安装插件包（.dhplugin）并立即切换到该版本、重启插件后端；原版本留作回滚。插件界面在重启 DeviceHub 界面后换成新版。</summary>
+    Task<PluginInstallResult> InstallPluginPackageAsync(string packagePath);
+
+    /// <summary>回到插件的上一个版本并重启后端，返回切换后的版本；没有上一个版本时返回 null。</summary>
+    Task<string?> RollbackPluginAsync(string pluginId);
 
     /// <summary>扫描 USB 拓扑（主控制器 → 集线器 → 端口 → 设备）及诊断结论。只读，不需要设备授权。</summary>
     Task<UsbTopology> GetUsbTopologyAsync();

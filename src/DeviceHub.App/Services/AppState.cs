@@ -58,6 +58,7 @@ public sealed class AppState
                 OwnerPluginName = g.PluginDisplayName,
                 GrantedAt = g.GrantedAt,
                 Subtitle = "未连接",
+                Glyph = g.DeviceGlyph,
                 Connected = false,
                 ParentKey = DeviceKeys.TrySplit(g.DeviceKey, out var parent, out _) ? parent : null,
             });

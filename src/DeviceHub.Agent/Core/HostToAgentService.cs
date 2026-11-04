@@ -99,8 +99,7 @@ public sealed class HostToAgentService : IHostToAgentApi
         return Task.CompletedTask;
     }
 
-    private static string? ValidGlyph(string? g) =>
-        g is { Length: 1 } && g[0] is >= '' and <= '' ? g : null;
+    private static string? ValidGlyph(string? g) => Glyphs.IsValid(g) ? g : null;
 
     /// <summary>Segoe Fluent Icons：Battery0–10 = E850–E85A，BatteryCharging0–10 = E85B–E865。</summary>
     private static string DefaultGlyph(OsdKind kind, int? pct) => kind switch

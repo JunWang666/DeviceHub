@@ -16,6 +16,7 @@ public sealed class PermissionService
     private readonly ConcurrentDictionary<string, DateTimeOffset> _grantedAt = new(); // 同 key：接入时间
     private readonly ConcurrentDictionary<string, string> _lastName = new();   // 同 key：上次在线时的显示名（离线时用）
     private readonly ConcurrentDictionary<string, string> _customName = new(); // 同 key：用户起的名字
+    private readonly ConcurrentDictionary<string, string> _glyph = new();      // 同 key：上次在线时插件给的图标
     private readonly ConcurrentDictionary<string, TaskCompletionSource<AccessScope>> _pending = new();
 
     /// <summary>需要弹窗征求用户同意。</summary>
@@ -58,6 +59,18 @@ public sealed class PermissionService
         _lastName[k] = name;
         Save();
     }
+
+    /// <summary>记住插件给设备的图标（已校验），离线时侧边栏照样显示。变了才写盘。</summary>
+    public void RememberGlyph(string pluginId, string deviceKey, string? glyph)
+    {
+        var k = K(pluginId, deviceKey);
+        if (!Glyphs.IsValid(glyph) || !_grants.ContainsKey(k)) return;
+        if (_glyph.TryGetValue(k, out var old) && old == glyph) return;
+        _glyph[k] = glyph!;
+        Save();
+    }
+
+    public string? GetGlyph(string pluginId, string deviceKey) => _glyph.GetValueOrDefault(K(pluginId, deviceKey));
 
     /// <summary>用户自定义设备名；空白表示恢复默认名。</summary>
     public void SetCustomName(string pluginId, string deviceKey, string? name)
@@ -153,6 +166,7 @@ public sealed class PermissionService
             _grantedAt.TryRemove(K(pluginId, deviceKey), out _);
             _lastName.TryRemove(K(pluginId, deviceKey), out _);
             _customName.TryRemove(K(pluginId, deviceKey), out _);
+            _glyph.TryRemove(K(pluginId, deviceKey), out _);
             Save();
             _log.LogInformation("撤销授权 {Plugin} → {Device}", pluginId, deviceKey);
             GrantRevoked?.Invoke(pluginId, deviceKey);
@@ -181,6 +195,7 @@ public sealed class PermissionService
                 if (rec.GrantedAt is { } t) _grantedAt[key] = t;
                 if (!string.IsNullOrWhiteSpace(rec.LastName)) _lastName[key] = rec.LastName;
                 if (!string.IsNullOrWhiteSpace(rec.CustomName)) _customName[key] = rec.CustomName;
+                if (Glyphs.IsValid(rec.Glyph)) _glyph[key] = rec.Glyph!;
             }
         }
         catch (Exception ex) { _log.LogWarning(ex, "读取授权失败"); }
@@ -193,12 +208,12 @@ public sealed class PermissionService
             var persist = _grants.Where(kv => kv.Value == AccessScope.Always)
                                   .ToDictionary(kv => kv.Key,
                                       kv => new GrantRecord(kv.Value, _grantedAt.TryGetValue(kv.Key, out var t) ? t : null,
-                                          _lastName.GetValueOrDefault(kv.Key), _customName.GetValueOrDefault(kv.Key)));
+                                          _lastName.GetValueOrDefault(kv.Key), _customName.GetValueOrDefault(kv.Key), _glyph.GetValueOrDefault(kv.Key)));
             File.WriteAllText(_file, JsonSerializer.Serialize(persist, Json));
         }
         catch (Exception ex) { _log.LogWarning(ex, "保存授权失败"); }
     }
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
-    private sealed record GrantRecord(AccessScope Scope, DateTimeOffset? GrantedAt, string? LastName = null, string? CustomName = null);
+    private sealed record GrantRecord(AccessScope Scope, DateTimeOffset? GrantedAt, string? LastName = null, string? CustomName = null, string? Glyph = null);
 }

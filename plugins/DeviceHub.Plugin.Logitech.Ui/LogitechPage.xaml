@@ -22,30 +22,42 @@
         </Style>
     </UserControl.Resources>
 
-    <ScrollViewer>
+    <!-- 设备名称和副标题由 DeviceHub 的页头显示，这里不再重复，只放分页和一行连接信息 -->
+    <Grid RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Grid ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <SelectorBar x:Name="Sections" Visibility="{x:Bind Vm.IsPointer, Mode=OneWay}" SelectionChanged="Sections_SelectionChanged">
+                <SelectorBarItem x:Name="SettingsTab" Text="设置" IsSelected="True">
+                    <SelectorBarItem.Icon><FontIcon Glyph="&#xE713;"/></SelectorBarItem.Icon>
+                </SelectorBarItem>
+                <SelectorBarItem x:Name="TestTab" Text="按键测试">
+                    <SelectorBarItem.Icon><FontIcon Glyph="&#xE962;"/></SelectorBarItem.Icon>
+                </SelectorBarItem>
+            </SelectorBar>
+            <TextBlock Visibility="{x:Bind Vm.IsNotPointer, Mode=OneWay}" Text="{x:Bind Vm.SummaryText, Mode=OneWay}" VerticalAlignment="Center"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="1,0,0,0"/>
+            <Button Grid.Column="1" VerticalAlignment="Center" Click="Refresh_Click" ToolTipService.ToolTip="重新读取设备信息与设置">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE72C;" FontSize="14"/>
+                    <TextBlock Text="重新读取"/>
+                </StackPanel>
+            </Button>
+        </Grid>
+
+    <ScrollViewer x:Name="SettingsPanel" Grid.Row="1">
         <StackPanel Spacing="{StaticResource CardSpacing}" Margin="0,0,0,36">
             <InfoBar IsOpen="{x:Bind Vm.ShowUnauthorized, Mode=OneWay}" Severity="Warning" IsClosable="False"
                      Title="未授权" Message="插件尚未获得此设备的访问授权。" Margin="0,0,0,8"/>
-
-            <!-- 概览 -->
-            <Grid Margin="1,0,0,10" ColumnSpacing="12">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <FontIcon Glyph="{x:Bind Vm.HeaderGlyph, Mode=OneWay}" FontSize="28" VerticalAlignment="Center"/>
-                <StackPanel Grid.Column="1">
-                    <TextBlock Text="{x:Bind Vm.Title, Mode=OneWay}" Style="{StaticResource SubtitleTextBlockStyle}"/>
-                    <TextBlock Text="{x:Bind Vm.ConnectionText, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"/>
-                </StackPanel>
-                <Button Grid.Column="2" VerticalAlignment="Center" Click="Refresh_Click">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <FontIcon Glyph="&#xE72C;" FontSize="14"/>
-                        <TextBlock Text="重新读取"/>
-                    </StackPanel>
-                </Button>
-            </Grid>
+            <TextBlock Visibility="{x:Bind Vm.IsPointer, Mode=OneWay}" Text="{x:Bind Vm.SummaryText, Mode=OneWay}"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="1,0,0,4"/>
 
             <!-- 接收器：配对表。每个配对设备在左侧导航里是接收器下的独立设备，设置在那里改 -->
             <StackPanel Visibility="{x:Bind Vm.ShowPaired, Mode=OneWay}" Spacing="{StaticResource CardSpacing}">
@@ -78,20 +90,7 @@
                      Title="没有配对设备" Message="这个接收器上没有已配对的设备。"/>
 
             <!-- 设备概览 -->
-            <StackPanel Visibility="{x:Bind Vm.HasDevice, Mode=OneWay}" Spacing="{StaticResource CardSpacing}" Margin="0,8,0,0">
-                <Grid ColumnSpacing="12" Margin="1,0,0,6">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <FontIcon Glyph="{x:Bind Vm.DeviceGlyph, Mode=OneWay}" FontSize="20" VerticalAlignment="Center"/>
-                    <StackPanel Grid.Column="1">
-                        <TextBlock Text="{x:Bind Vm.DeviceName, Mode=OneWay}" Style="{StaticResource BodyStrongTextBlockStyle}"/>
-                        <TextBlock Text="{x:Bind Vm.DeviceInfoText, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                    </StackPanel>
-                </Grid>
-
+            <StackPanel Visibility="{x:Bind Vm.HasDevice, Mode=OneWay}" Spacing="{StaticResource CardSpacing}" Margin="0,4,0,0">
                 <InfoBar IsOpen="{x:Bind Vm.DeviceOffline, Mode=OneWay}" Severity="Informational" IsClosable="False"
                          Title="设备未连接" Message="{x:Bind Vm.OfflineText, Mode=OneWay}"/>
 
@@ -186,13 +185,6 @@
                     </tk:SettingsExpander.Items>
                 </tk:SettingsExpander>
 
-                <!-- 按键与移动测试（鼠标 / 轨迹球） -->
-                <StackPanel Visibility="{x:Bind Vm.IsPointer, Mode=OneWay}">
-                    <TextBlock Text="按键与移动测试" Style="{StaticResource GroupHeaderStyle}"/>
-                    <!-- 面板在代码里放进来：App 运行时解析插件 XAML 时认不出插件自己定义的控件类型 -->
-                    <Border x:Name="MouseTestHost" Style="{StaticResource TileStyle}"/>
-                </StackPanel>
-
                 <!-- 诊断 -->
                 <TextBlock Text="诊断" Style="{StaticResource GroupHeaderStyle}"/>
                 <tk:SettingsExpander Header="HID++ Feature" Description="设备报告支持、且本插件识别的 Feature">
@@ -214,4 +206,14 @@
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="1,8,0,0"/>
         </StackPanel>
     </ScrollViewer>
+
+    <!-- 按键测试（鼠标 / 轨迹球）。面板在代码里放进来：App 运行时解析插件 XAML 时认不出插件自己定义的控件类型 -->
+    <ScrollViewer x:Name="TestPanel" Grid.Row="1" Visibility="Collapsed">
+        <StackPanel Spacing="12" Margin="0,0,0,36">
+            <TextBlock Text="在下面的区域里点击、滚动、移动鼠标，检查每个按键和滚轮是否正常。系统不区分是哪只鼠标，接着几只时都会响应。"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="1,0,0,0"/>
+            <Border x:Name="MouseTestHost" Style="{StaticResource TileStyle}"/>
+        </StackPanel>
+    </ScrollViewer>
+    </Grid>
 </UserControl>

@@ -263,6 +263,7 @@ public sealed class AirPodsPlugin : IDevicePlugin
             if (st.Rssi is { } rssi) details.Add(new("广播信号", $"{rssi} dBm"));
             return Task.FromResult<DeviceDescription?>(new DeviceDescription
             {
+                Glyph = "", // 耳机
                 Subtitle = !st.Connected ? "未连接" : Battery(st) is { Length: > 0 } sub ? sub : "已连接 · 等待广播",
                 Details = details,
             });

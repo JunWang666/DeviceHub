@@ -52,6 +52,7 @@ public sealed class GameSirPlugin : IDevicePlugin
         var link = st.Wireless ? "2.4G 接收器（USB 3537:1098）" : "有线（USB 3537:100F）";
         return Task.FromResult<DeviceDescription?>(new DeviceDescription
         {
+            Glyph = "", // 手柄
             Subtitle = st.Battery is { } b ? $"{(st.Wireless ? "2.4G" : "有线")} · 电量 {b}%" : (st.Wireless ? "2.4G 接收器" : "有线"),
             Details = new DeviceDetailItem[]
             {
