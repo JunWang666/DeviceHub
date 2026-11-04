@@ -46,7 +46,7 @@ public sealed partial class MainWindow : Window
         try
         {
             var agent = _state.Client.Agent!;
-            Console.WriteLine($"SELFTEST: 新设备={_state.NewDevices.Count} 正在管理={_state.ManagedDevices.Count}");
+            Console.WriteLine($"SELFTEST: 新设备={_state.NewDevices.Count} 正在管理={_state.ManagedDevices.Count}（离线 {_state.ManagedDevices.Count(d => !d.Connected)}） 授权记录={(await agent.ListGrantsAsync()).Count}");
             var usb = await agent.GetUsbTopologyAsync();
             var usbIssues = new List<(Services.UsbRow, UsbIssue)>();
             var usbRows = Services.UsbTreeBuilder.Build(usb, showEmptyPorts: false, usbIssues);
@@ -67,7 +67,7 @@ public sealed partial class MainWindow : Window
                     var pg = Services.PluginUiLoader.LoadPage(p.UiAssemblyPath!, p.UiPageTypeName!, b);
                     Console.WriteLine($"SELFTEST: 插件 {p.Id} XAML 加载成功 type={pg.GetType().FullName}");
                 }
-                catch (Exception ex) { Console.WriteLine($"SELFTEST: 插件 {p.Id} XAML 加载失败 {ex.Message}"); }
+                catch (Exception ex) { Console.WriteLine($"SELFTEST: 插件 {p.Id} XAML 加载失败 {ex.Message} ← {ex.GetBaseException().GetType().Name}: {ex.GetBaseException().Message}"); }
             }
 
             var dev = _state.NewDevices.FirstOrDefault() ?? _state.ManagedDevices.FirstOrDefault();
@@ -118,7 +118,7 @@ public sealed partial class MainWindow : Window
                      .Where(i => (i.Tag as string)?.StartsWith("dev:") == true).ToList())
             Nav.MenuItems.Remove(item);
 
-        // 子设备（如接收器上配对的鼠标）挂在父设备下面，默认展开；未连接的子设备淡显。
+        // 子设备（如接收器上配对的鼠标）挂在父设备下面，默认展开；未连接的设备（含离线占位）淡显。
         var managedKeys = _state.ManagedDevices.Select(d => d.DeviceKey).ToHashSet();
         foreach (var dev in _state.ManagedDevices.Where(d => d.ParentKey is null || !managedKeys.Contains(d.ParentKey)))
         {
@@ -171,7 +171,7 @@ public sealed partial class MainWindow : Window
         Content = dev.DisplayName,
         Tag = "dev:" + dev.DeviceKey,
         Icon = new FontIcon { Glyph = "" },
-        Opacity = dev.IsChild && !dev.Connected ? 0.55 : 1,
+        Opacity = dev.Connected ? 1 : 0.55,
     };
 
     /// <summary>在菜单（含子设备层级）里按 Tag 找项。</summary>

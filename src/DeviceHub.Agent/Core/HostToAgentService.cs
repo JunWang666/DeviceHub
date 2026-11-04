@@ -130,4 +130,16 @@ public sealed class HostToAgentService : IHostToAgentApi
         }
         return Task.CompletedTask;
     }
+
+    public Task ForgetChildAsync(string pluginId, string parentKey, string childId)
+    {
+        Check(pluginId);
+        if (DeviceKeys.IsChild(parentKey) || _perms.GetGrant(pluginId, parentKey) != AccessScope.Always) return Task.CompletedTask;
+        var key = DeviceKeys.Child(parentKey, childId);
+        _perms.Revoke(pluginId, key);
+        _broker.RemoveChild(key);
+        _log.LogInformation("移除子设备 {Child}", key);
+        _appHub.DevicesChanged(_broker.Enumerate());
+        return Task.CompletedTask;
+    }
 }

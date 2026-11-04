@@ -21,10 +21,21 @@ public sealed partial class NewDevicePage : Page
 
         if (AppState.Instance.Client.Agent is { } a)
         {
-            var grants = (await a.ListGrantsAsync()).Where(g => g.Scope == AccessScope.Always && !DeviceKeys.IsChild(g.DeviceKey)) // 子设备随父设备授权，不单独列出
-                .Select(g => new GrantRow { Grant = g }).ToList();
-            GrantList.ItemsSource = grants;
-            NoGrantHint.Visibility = grants.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            try
+            {
+                // 子设备也列出来：已解除配对的子设备只能在这里撤销
+                var grants = (await a.ListGrantsAsync()).Where(g => g.Scope == AccessScope.Always)
+                    .Select(g => new GrantRow { Grant = g }).ToList();
+                GrantList.ItemsSource = grants;
+                NoGrantHint.Text = "还没有授权任何设备。";
+                NoGrantHint.Visibility = grants.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
+            catch (Exception ex)
+            {
+                GrantList.ItemsSource = null;
+                NoGrantHint.Text = "读取授权列表失败：" + ex.Message;
+                NoGrantHint.Visibility = Visibility.Visible;
+            }
         }
     }
 

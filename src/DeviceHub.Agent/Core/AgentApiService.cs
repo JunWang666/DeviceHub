@@ -102,7 +102,8 @@ public sealed class AgentApiService : IAgentApi
     public Task<IReadOnlyList<GrantInfo>> ListGrantsAsync()
     {
         var plugins = _supervisor.List().ToDictionary(p => p.Id);
-        var devices = _broker.Enumerate().ToDictionary(d => d.DeviceKey);
+        var devices = new Dictionary<string, DeviceInfo>();
+        foreach (var d in _broker.Enumerate()) devices.TryAdd(d.DeviceKey, d);
         IReadOnlyList<GrantInfo> list = _perms.AllGrants()
             .Select(g =>
             {

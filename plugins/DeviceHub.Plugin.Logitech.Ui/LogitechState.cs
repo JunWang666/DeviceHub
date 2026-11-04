@@ -61,6 +61,9 @@ public sealed class LogitechStateDto
     public string ReceiverKind { get; set; } = "";
     public string ReceiverFirmware { get; set; } = "";
     public string Link { get; set; } = "";
+    public bool CanPair { get; set; }
+    public bool PairingOpen { get; set; }
+    public string PairingStatus { get; set; } = "";
     public List<HidppDeviceDto> Devices { get; set; } = new();
     public DateTimeOffset? LastReadAt { get; set; }
 }
@@ -68,6 +71,8 @@ public sealed class LogitechStateDto
 /// <summary>接收器页配对表的一行。</summary>
 public sealed class PairedRow
 {
+    public int Slot { get; set; }
+    public bool CanUnpair { get; set; }
     public string Glyph { get; set; } = "";
     public string Title { get; set; } = "";
     public string Detail { get; set; } = "";

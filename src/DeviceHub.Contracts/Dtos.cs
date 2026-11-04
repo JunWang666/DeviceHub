@@ -143,7 +143,8 @@ public sealed record PluginInfo
     public required string Version { get; init; }
     public required PluginRunState State { get; init; }
     public int RestartCount { get; init; }
-    public long WorkingSetBytes { get; init; }
+    /// <summary>插件进程的专用内存（不含与其他进程共享的运行时映像，接近任务管理器的"内存"列）。</summary>
+    public long MemoryBytes { get; init; }
     public string? LastError { get; init; }
     /// <summary>此插件 UI 页面所在程序集相对路径（相对插件版本目录），供 App 进程内加载。</summary>
     public string? UiAssemblyPath { get; init; }

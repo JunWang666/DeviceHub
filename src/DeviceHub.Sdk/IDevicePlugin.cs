@@ -56,6 +56,12 @@ public interface IPluginContext
     /// 会收到子设备键。子设备没有通道，I/O 仍用父设备键。父设备被移除或授权撤销时子设备随之消失。
     /// </summary>
     Task PublishChildrenAsync(string parentKey, IReadOnlyList<ChildDevice> children);
+
+    /// <summary>
+    /// 子设备已不存在（如鼠标已从接收器上取消配对）：撤销它的授权并从界面上移除，自定义名称一并清除。
+    /// 只是暂时离线的子设备不要调用，在 <see cref="PublishChildrenAsync"/> 里标为未连接即可（它会留在侧边栏）。
+    /// </summary>
+    Task ForgetChildAsync(string parentKey, string childId);
 }
 
 /// <summary>

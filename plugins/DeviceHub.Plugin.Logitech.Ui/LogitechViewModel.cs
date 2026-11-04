@@ -57,6 +57,16 @@ public sealed class LogitechViewModel : INotifyPropertyChanged
     // —— 接收器页：配对表（每个配对设备在左侧有自己的页面）——
 
     public bool ShowPaired => State.IsReceiver && State.Devices.Count > 0;
+    // 配对 / 取消配对（目前只有 Unifying 接收器）
+    public bool ShowPairing => State.Authorized && State.CanPair;
+    public bool PairingOpen => State.PairingOpen;
+    public bool PairingIdle => !State.PairingOpen;
+    public string PairingDescription => State.PairingStatus.Length > 0 ? State.PairingStatus
+        : "最多可配对 6 个设备。点「开始配对」，再打开要配对的设备。";
+    public void StartPairing() => Invoke("StartPairing", new { });
+    public void StopPairing() => Invoke("StopPairing", new { });
+    public void Unpair(int slot) => Invoke("Unpair", new { slot });
+
     public bool ShowNoDevices => State.Authorized && State.IsReceiver && State.Devices.Count == 0 && State.LastReadAt is not null;
     public List<PairedRow> PairedRows => !State.IsReceiver ? new()
         : State.Devices.Select(d => new PairedRow
@@ -71,9 +81,12 @@ public sealed class LogitechViewModel : INotifyPropertyChanged
                 d.Wpid.Length > 0 ? $"WPID {d.Wpid}" : "",
             }.Where(s => s.Length > 0)),
             Opacity = d.Online ? 1 : 0.6,
+            Slot = d.Index,
+            CanUnpair = State.CanPair,
         }).ToList();
 
     public bool HasDevice => D is not null;
+    public bool IsPointer => D?.Kind is "mouse" or "trackball";
     public bool DeviceOnline => D?.Online == true;
     public bool DeviceOffline => D is { Online: false };
     public string DeviceName => D is null ? "" : D.Name.Length > 0 ? D.Name : $"设备 {D.Index}";

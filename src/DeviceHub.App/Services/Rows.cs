@@ -76,7 +76,7 @@ public sealed class PluginRow
     {
         get
         {
-            var s = $"版本 {Plugin.Version} · {Fmt.State(Plugin.State)} · 内存 {Fmt.Size(Plugin.WorkingSetBytes)}";
+            var s = $"版本 {Plugin.Version} · {Fmt.State(Plugin.State)} · 内存 {Fmt.Size(Plugin.MemoryBytes)}";
             if (Plugin.RestartCount > 0) s += $" · 已重启 {Plugin.RestartCount} 次";
             if (!string.IsNullOrEmpty(Plugin.LastError)) s += $"\n最近错误：{Plugin.LastError}";
             return s;

@@ -58,11 +58,22 @@
                         <DataTemplate x:DataType="local:PairedRow">
                             <tk:SettingsCard Header="{x:Bind Title}" Description="{x:Bind Detail}" Opacity="{x:Bind Opacity}">
                                 <tk:SettingsCard.HeaderIcon><FontIcon Glyph="{x:Bind Glyph}"/></tk:SettingsCard.HeaderIcon>
+                                <Button Content="取消配对" Visibility="{x:Bind CanUnpair}" Click="Unpair_Click"/>
                             </tk:SettingsCard>
                         </DataTemplate>
                     </ItemsRepeater.ItemTemplate>
                 </ItemsRepeater>
             </StackPanel>
+            <!-- 配对新设备（Unifying） -->
+            <tk:SettingsCard Visibility="{x:Bind Vm.ShowPairing, Mode=OneWay}" Margin="0,8,0,0"
+                             Header="配对新设备" Description="{x:Bind Vm.PairingDescription, Mode=OneWay}">
+                <tk:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE710;"/></tk:SettingsCard.HeaderIcon>
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <ProgressRing IsActive="{x:Bind Vm.PairingOpen, Mode=OneWay}" Visibility="{x:Bind Vm.PairingOpen, Mode=OneWay}" Width="20" Height="20"/>
+                    <Button Content="开始配对" Style="{StaticResource AccentButtonStyle}" Visibility="{x:Bind Vm.PairingIdle, Mode=OneWay}" Click="StartPairing_Click"/>
+                    <Button Content="停止" Visibility="{x:Bind Vm.PairingOpen, Mode=OneWay}" Click="StopPairing_Click"/>
+                </StackPanel>
+            </tk:SettingsCard>
             <InfoBar IsOpen="{x:Bind Vm.ShowNoDevices, Mode=OneWay}" Severity="Informational" IsClosable="False"
                      Title="没有配对设备" Message="这个接收器上没有已配对的设备。"/>
 
@@ -174,6 +185,13 @@
                         </tk:SettingsCard>
                     </tk:SettingsExpander.Items>
                 </tk:SettingsExpander>
+
+                <!-- 按键与移动测试（鼠标 / 轨迹球） -->
+                <StackPanel Visibility="{x:Bind Vm.IsPointer, Mode=OneWay}">
+                    <TextBlock Text="按键与移动测试" Style="{StaticResource GroupHeaderStyle}"/>
+                    <!-- 面板在代码里放进来：App 运行时解析插件 XAML 时认不出插件自己定义的控件类型 -->
+                    <Border x:Name="MouseTestHost" Style="{StaticResource TileStyle}"/>
+                </StackPanel>
 
                 <!-- 诊断 -->
                 <TextBlock Text="诊断" Style="{StaticResource GroupHeaderStyle}"/>

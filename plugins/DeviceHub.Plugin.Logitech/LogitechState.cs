@@ -118,6 +118,12 @@ public sealed class LogitechState
     public string ReceiverKind { get; set; } = "";
     public string ReceiverFirmware { get; set; } = "";
     public string Link { get; set; } = "";
+    /// <summary>可在本软件里配对新设备、取消配对（目前只支持 Unifying 接收器）。</summary>
+    public bool CanPair => IsReceiver && ReceiverKind == "unifying";
+    /// <summary>接收器的配对窗口正打开着，等新设备开机。</summary>
+    public bool PairingOpen { get; set; }
+    /// <summary>配对 / 取消配对的进度与结果，如"已配对：MX Master 3"。</summary>
+    public string PairingStatus { get; set; } = "";
 
     public List<HidppDeviceState> Devices { get; set; } = new();
     public DateTimeOffset? LastReadAt { get; set; }

@@ -23,9 +23,11 @@ public static class Hidpp
     // —— HID++ 1.0 ——
     public const byte SetRegister = 0x80, GetRegister = 0x81, SetLongRegister = 0x82, GetLongRegister = 0x83;
     public const byte Error10 = 0x8F;
-    public const byte RegNotifications = 0x00, RegReceiverFirmware = 0xF1, RegReceiverInfo = 0xB5;
+    public const byte RegNotifications = 0x00, RegReceiverFirmware = 0xF1, RegReceiverInfo = 0xB5, RegPairing = 0xB2;
     /// <summary>设备连接 / 断开通知（子 id）。</summary>
     public const byte DeviceConnection = 0x41;
+    /// <summary>接收器配对窗口开关通知：[10 FF 4A 状态 错误码 …]，状态 bit0 = 窗口打开（Solaar notifications.py）。</summary>
+    public const byte PairingLock = 0x4A;
 
     // —— HID++ 2.0 ——
     public const byte Error20 = 0xFF;

@@ -205,6 +205,14 @@ public sealed class LogitechPlugin : IDevicePlugin
             return Json(View(deviceKey));
         }
 
+        if (method is "StartPairing" or "StopPairing" or "Unpair")
+        {
+            if (DeviceKeys.IsChild(deviceKey) || !st.CanPair) st.PairingStatus = "这个接收器不支持在这里配对";
+            else await PairingAsync(key, st, method, a);
+            await Push(key, st);
+            return Json(View(deviceKey));
+        }
+
         if (ds is null) { st.Status = st.IsReceiver ? "请在左侧选择接收器下的设备进行设置" : "设备不存在"; return Json(View(deviceKey)); }
         if (!ds.Online) { ds.Status = "设备未连接，无法写入"; await Push(key, st); return Json(View(deviceKey)); }
 
@@ -725,12 +733,88 @@ public sealed class LogitechPlugin : IDevicePlugin
         }, cts.Token);
     }
 
-    // —— 通知：配对设备连接 / 断开（接收器 0x41）、电量变化（0x1000 / 0x1004 事件）——
+    // —— 配对 / 取消配对（Unifying：短寄存器 0xB2 = [动作, 槽位, 超时秒]，动作 1 打开窗口 / 2 关闭 / 3 取消配对；Solaar receiver.py）——
+
+    private const byte PairingTimeoutS = 30;
+    private readonly ConcurrentDictionary<string, long> _pairingStamp = new();
+
+    private async Task PairingAsync(string deviceKey, LogitechState st, string method, JsonElement a)
+    {
+        switch (method)
+        {
+            case "StartPairing":
+            {
+                var r = await TransactAsync(deviceKey, st, Hidpp.Register(Hidpp.Receiver, Hidpp.SetRegister, Hidpp.RegPairing, "打开配对", 0x01, 0x00, PairingTimeoutS));
+                if (r.Data is null) { st.PairingStatus = PairingError(r, "打开配对"); return; }
+                st.PairingOpen = true;
+                st.PairingStatus = $"请在 {PairingTimeoutS} 秒内打开要配对的设备；已开机的设备先关再开";
+                // 接收器窗口到时会发 0x4A；万一没收到，稍后自己收起，免得页面一直停在"等待中"
+                long stamp = Environment.TickCount64;
+                _pairingStamp[deviceKey] = stamp;
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(PairingTimeoutS + 5));
+                    if (!st.PairingOpen || _pairingStamp.GetValueOrDefault(deviceKey) != stamp) return;
+                    st.PairingOpen = false;
+                    st.PairingStatus = "没有发现新设备，配对已结束";
+                    await Push(deviceKey, st);
+                });
+                return;
+            }
+            case "StopPairing":
+            {
+                var r = await TransactAsync(deviceKey, st, Hidpp.Register(Hidpp.Receiver, Hidpp.SetRegister, Hidpp.RegPairing, "关闭配对", 0x02, 0x00, 0x00));
+                if (r.Data is null) { st.PairingStatus = PairingError(r, "关闭配对"); return; }
+                st.PairingOpen = false;
+                st.PairingStatus = "已取消配对";
+                return;
+            }
+            case "Unpair":
+            {
+                int slot = Int(a, "slot", 0);
+                var ds = st.Devices.FirstOrDefault(d => d.Index == slot);
+                if (ds is null) { st.PairingStatus = "接收器上没有这个设备"; return; }
+                var r = await TransactAsync(deviceKey, st, Hidpp.Register(Hidpp.Receiver, Hidpp.SetRegister, Hidpp.RegPairing, "取消配对", 0x03, (byte)slot, 0x00));
+                if (r.Data is null) { st.PairingStatus = PairingError(r, "取消配对"); return; }
+
+                st.Devices.Remove(ds);
+                _features.TryRemove((deviceKey, slot), out _);
+                // 槽位缓存的名字 / Id 一并清掉，免得新设备配到这个槽位时沿用旧名字
+                var names = await _ctx.Storage.GetAsync<Dictionary<int, string>>(NamesKey(deviceKey)) ?? new();
+                var ids = await _ctx.Storage.GetAsync<Dictionary<int, string>>(IdsKey(deviceKey)) ?? new();
+                if (names.Remove(slot)) await _ctx.Storage.SetAsync(NamesKey(deviceKey), names);
+                if (ids.Remove(slot)) await _ctx.Storage.SetAsync(IdsKey(deviceKey), ids);
+                if (ds.Id.Length > 0) await _ctx.ForgetChildAsync(deviceKey, ds.Id);
+                st.PairingStatus = $"已取消配对：{ChildName(ds)}";
+                return;
+            }
+        }
+    }
+
+    private static string PairingError(Hidpp.Reply r, string what) =>
+        r.Error is { } e ? $"{what}失败：{(r.Is10Error ? Hidpp.Error10Text(e) : Hidpp.Error20Text(e))}"
+        : r.Failed ? $"{what}失败" : $"{what}：接收器无响应";
+
+    /// <summary>0x4A 配对窗口关闭时的错误码（Solaar hidpp10_constants.PairingError）。</summary>
+    private static string PairingResult(int error, string current) => error switch
+    {
+        0 => current.StartsWith("已配对", StringComparison.Ordinal) ? current : "配对已结束",
+        1 => "没有发现设备：请确认设备已开机、靠近接收器",
+        2 => "这个设备不支持 Unifying",
+        3 => "接收器的配对槽位已满，请先取消配对一个设备",
+        6 => "配对超时",
+        _ => $"配对失败（错误 {error}）",
+    };
+
+    // —— 通知：配对设备连接 / 断开（接收器 0x41）、配对窗口（0x4A）、电量变化（0x1000 / 0x1004 事件）——
 
     /// <summary>
-    /// 后台监听设备主动发来的报告。每轮只占用设备锁一小会儿（每个集合最多等 50ms），
-    /// 一问一答可以穿插进来；一问一答期间读到的通知放进收件箱，在这里统一处理。
+    /// 后台监听设备主动发来的报告。每轮只占用设备锁取走 HID 驱动里已缓存的报告（每个集合等 1ms），
+    /// 然后在锁外歇 200ms：报告在驱动的缓冲区里不会丢，一问一答也不用排在长时间的等待后面。
+    /// 一问一答期间读到的通知放进收件箱，在这里统一处理。
     /// </summary>
+    private const int ListenInterval = 200;
+
     private void StartListener(string deviceKey, LogitechState st)
     {
         var cts = new CancellationTokenSource();
@@ -752,9 +836,9 @@ public sealed class LogitechPlugin : IDevicePlugin
                     try
                     {
                         foreach (var role in roles)
-                            for (int i = 0, wait = 50; i < 16; i++, wait = 1)
+                            for (int i = 0; i < 16; i++)
                             {
-                                var r = await _ctx.Device.ReadInputAsync(deviceKey, wait, role);
+                                var r = await _ctx.Device.ReadInputAsync(deviceKey, 1, role);
                                 if (r.Status == DeviceIoStatus.Ok && r.Data is { } d) { inbox.Enqueue(d); continue; }
                                 failed |= r.Status is not (DeviceIoStatus.Ok or DeviceIoStatus.Timeout);
                                 break;
@@ -765,7 +849,7 @@ public sealed class LogitechPlugin : IDevicePlugin
                     while (inbox.TryDequeue(out var rep))
                         try { await OnReportAsync(deviceKey, st, rep); }
                         catch (Exception) { /* 单条通知处理失败不影响监听 */ }
-                    if (failed) await Task.Delay(1000, cts.Token);
+                    await Task.Delay(failed ? 1000 : ListenInterval, cts.Token);
                 }
             }
             catch (OperationCanceledException) { }
@@ -777,13 +861,28 @@ public sealed class LogitechPlugin : IDevicePlugin
         if (rep.Length < 7 || rep[0] is not (Hidpp.ShortId or Hidpp.LongId)) return;
         var ds = st.Devices.FirstOrDefault(d => d.Index == rep[1]);
 
+        if (st.IsReceiver && rep[1] == Hidpp.Receiver && rep[2] == Hidpp.PairingLock)
+        {
+            bool open = (rep[3] & 0x01) != 0;
+            if (open == st.PairingOpen && open) return;
+            st.PairingOpen = open;
+            if (!open) st.PairingStatus = PairingResult(rep[4], st.PairingStatus);
+            await Push(deviceKey, st);
+            return;
+        }
+
         // 0x41 连接通知：[10 槽位 41 协议 标志 wpid-lo wpid-hi]，标志位 0x40 = 链路断开（Solaar notifications.py）。
         if (st.IsReceiver && rep[2] == Hidpp.DeviceConnection)
         {
             bool lost = (rep[4] & 0x40) != 0;
             if (ds is null)
             {
-                if (!lost) await RefreshAsync(deviceKey, st); // 新配对的设备
+                if (lost) return;
+                await RefreshAsync(deviceKey, st); // 新配对的设备
+                if (st.Devices.FirstOrDefault(d => d.Index == rep[1]) is not { } added) return;
+                st.PairingStatus = $"已配对：{ChildName(added)}";
+                await Push(deviceKey, st);
+                if (added.Online) await ConnectedOsdAsync(deviceKey, st, added);
                 return;
             }
             if (lost)
@@ -934,9 +1033,9 @@ public sealed class LogitechPlugin : IDevicePlugin
         finally { gate.Release(); }
     }
 
-    /// <summary>0x41 连接通知，或 software id 为 0 的 2.0 事件（其他软件 / 本插件的回包不算）。</summary>
+    /// <summary>0x41 连接 / 0x4A 配对窗口通知，或 software id 为 0 的 2.0 事件（其他软件 / 本插件的回包不算）。</summary>
     private static bool IsNotification(byte[] r) =>
-        r.Length >= 7 && (r[2] == Hidpp.DeviceConnection || (r[0] == Hidpp.LongId && r[2] != Hidpp.Error20 && (r[3] & 0x0F) == 0));
+        r.Length >= 7 && (r[2] is Hidpp.DeviceConnection or Hidpp.PairingLock || (r[0] == Hidpp.LongId && r[2] != Hidpp.Error20 && (r[3] & 0x0F) == 0));
 
     private static void Fail(LogitechState st, DeviceIoStatus s, string what)
     {

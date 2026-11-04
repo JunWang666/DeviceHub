@@ -40,10 +40,31 @@ public sealed class AppState
         if (Client.Agent is null) return;
         var devs = await Client.Agent.ListDevicesAsync();
         var plugs = await Client.Agent.ListPluginsAsync();
+        IReadOnlyList<GrantInfo> grants;
+        try { grants = await Client.Agent.ListGrantsAsync(); }
+        catch { grants = Array.Empty<GrantInfo>(); } // 拿不到授权记录时只是少了离线占位，在线设备照常显示
+        // 已授权但当前不在线的设备（蓝牙断开、接收器拔掉）也留在侧边栏，用授权记录补一个离线占位。
+        var online = devs.Where(d => d.HasOwner).ToList();
+        var offline = grants
+            .Where(g => g.Scope == AccessScope.Always && online.All(d => d.DeviceKey != g.DeviceKey))
+            .OrderBy(g => g.GrantedAt)
+            .Select(g => new DeviceInfo
+            {
+                DeviceKey = g.DeviceKey,
+                Bus = g.DeviceKey.StartsWith("bt:", StringComparison.Ordinal) ? DeviceBus.Bluetooth : DeviceBus.Hid,
+                DisplayName = string.IsNullOrEmpty(g.DeviceDisplayName) ? "未知设备" : g.DeviceDisplayName,
+                DefaultName = g.DefaultName,
+                OwnerPluginId = g.PluginId,
+                OwnerPluginName = g.PluginDisplayName,
+                GrantedAt = g.GrantedAt,
+                Subtitle = "未连接",
+                Connected = false,
+                ParentKey = DeviceKeys.TrySplit(g.DeviceKey, out var parent, out _) ? parent : null,
+            });
         OnUi(() =>
         {
             Devices.Clear(); foreach (var d in devs) Devices.Add(d);
-            ManagedDevices.Clear(); foreach (var d in devs.Where(d => d.HasOwner)) ManagedDevices.Add(d);
+            ManagedDevices.Clear(); foreach (var d in online.Concat(offline)) ManagedDevices.Add(d);
             NewDevices.Clear(); foreach (var d in devs.Where(d => !d.HasOwner && d.HasCandidatePlugin)) NewDevices.Add(d);
             Plugins.Clear(); foreach (var p in plugs) Plugins.Add(p);
             DevicesRefreshed?.Invoke();

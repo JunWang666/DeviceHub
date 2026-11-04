@@ -118,4 +118,7 @@ public interface IHostToAgentApi
     /// 子设备随父设备授权，键为 <see cref="DeviceKeys.Child"/>。
     /// </summary>
     Task PublishChildrenAsync(string pluginId, string parentKey, IReadOnlyList<ChildDevice> children);
+
+    /// <summary>子设备已不存在：撤销其授权并从设备列表移除。插件必须已获得父设备的 Always 授权。</summary>
+    Task ForgetChildAsync(string pluginId, string parentKey, string childId);
 }

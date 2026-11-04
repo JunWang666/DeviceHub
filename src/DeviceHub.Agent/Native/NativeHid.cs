@@ -135,6 +135,67 @@ public static class NativeHid
         return n > 0 ? buf[..n] : null;
     }
 
+    /// <summary>
+    /// 读一个输入报告，等待期间不占线程：重叠 I/O 的完成事件交给线程池等待（插件轮询时一次可能等几十到几千毫秒）。
+    /// 超时 / 失败返回 null。缓冲区和 OVERLAPPED 放在非托管内存里，I/O 结束前句柄被引用住、不会真正关闭。
+    /// </summary>
+    public static Task<byte[]?> ReadInputAsync(SafeFileHandle h, int inputLength, int timeoutMs)
+    {
+        if (inputLength <= 0) return Task.FromResult<byte[]?>(null);
+        var op = new PendingRead(h, inputLength);
+        if (!op.Start()) { op.Dispose(); return Task.FromResult<byte[]?>(null); }
+        // 已有缓存报告（同步完成）或只是想取走缓冲区里的报告（超时极短）：直接在当前线程等完，
+        // 省掉线程池等待的一个系统时钟周期（约 15ms）
+        if (timeoutMs <= 2 || op.Event.WaitOne(0)) return Task.FromResult(op.Finish(!op.Event.WaitOne(timeoutMs)));
+        var tcs = new TaskCompletionSource<byte[]?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reg = ThreadPool.RegisterWaitForSingleObject(op.Event, (_, timedOut) => tcs.TrySetResult(op.Finish(timedOut)), null, timeoutMs, executeOnlyOnce: true);
+        tcs.Task.ContinueWith(_ => reg.Unregister(null), TaskScheduler.Default);
+        return tcs.Task;
+    }
+
+    private sealed unsafe class PendingRead : IDisposable
+    {
+        private readonly SafeFileHandle _h;
+        private readonly bool _ref;
+        private readonly int _len;
+        private byte* _buf;
+        private NativeOverlapped* _ov;
+        public readonly ManualResetEvent Event = new(false);
+
+        public PendingRead(SafeFileHandle h, int len)
+        {
+            _h = h;
+            _len = len;
+            h.DangerousAddRef(ref _ref);
+            _buf = (byte*)NativeMemory.Alloc((nuint)len);
+            _ov = (NativeOverlapped*)NativeMemory.AllocZeroed((nuint)sizeof(NativeOverlapped));
+            _ov->EventHandle = Event.SafeWaitHandle.DangerousGetHandle();
+        }
+
+        /// <summary>发起读；同步完成时事件同样会被置位。</summary>
+        public bool Start() => ReadFile(_h, _buf, (uint)_len, out _, _ov) || Marshal.GetLastWin32Error() == ERROR_IO_PENDING;
+
+        public byte[]? Finish(bool timedOut)
+        {
+            try
+            {
+                if (timedOut) CancelIoEx(_h, _ov);
+                // 超时时等取消完成（确保内核不再写缓冲区）；恰好在取消前读到的报告照样返回
+                return GetOverlappedResult(_h, _ov, out uint n, timedOut) && n > 0 ? new ReadOnlySpan<byte>(_buf, (int)n).ToArray() : null;
+            }
+            finally { Dispose(); }
+        }
+
+        public void Dispose()
+        {
+            if (_buf is null) return;
+            NativeMemory.Free(_buf); _buf = null;
+            NativeMemory.Free(_ov); _ov = null;
+            Event.Dispose();
+            if (_ref) _h.DangerousRelease();
+        }
+    }
+
     /// <summary>重叠 I/O + 超时取消。句柄须以 FILE_FLAG_OVERLAPPED 打开。返回传输字节数，失败/超时为 -1。</summary>
     private static unsafe int Overlapped(SafeFileHandle h, byte[] buf, bool write, int timeoutMs)
     {
