@@ -16,8 +16,46 @@ public sealed class PluginManifest
     public string BackendType { get; set; } = "";
     public string? UiAssembly { get; set; }
     public string? UiPageType { get; set; }
+    /// <summary>实现 IPluginWidgetProvider 的类型；省略时用 <see cref="UiPageType"/>。</summary>
+    public string? UiWidgetType { get; set; }
     public List<DeviceMatch> Devices { get; set; } = new();
+    public List<WidgetManifest> Widgets { get; set; } = new();
     public List<string> Permissions { get; set; } = new();
+
+    /// <summary>清单里的小组件声明 → 发给界面的 <see cref="WidgetInfo"/>；无效项（缺 id/标题、id 重复）丢弃。</summary>
+    public IReadOnlyList<WidgetInfo> WidgetInfos() => Widgets
+        .Where(w => w.Id.Length > 0 && w.Title.Length > 0)
+        .GroupBy(w => w.Id).Select(g => g.First())
+        .Select(w =>
+        {
+            var sizes = w.Sizes.Select(ParseSize).OfType<WidgetSize>().Distinct().ToList();
+            if (sizes.Count == 0) sizes.Add(WidgetSize.Small);
+            var def = ParseSize(w.DefaultSize) is { } d && sizes.Contains(d) ? d : sizes[0];
+            return new WidgetInfo
+            {
+                Id = w.Id, Title = w.Title, Description = w.Description,
+                Glyph = Glyphs.IsValid(w.Glyph) ? w.Glyph : null,
+                Sizes = sizes, DefaultSize = def,
+                Targets = w.Targets is "physical" or "child" ? w.Targets : "any",
+            };
+        }).ToList();
+
+    private static WidgetSize? ParseSize(string? s) => s?.ToLowerInvariant() switch
+    {
+        "small" => WidgetSize.Small, "wide" => WidgetSize.Wide, "large" => WidgetSize.Large, _ => null,
+    };
+}
+
+/// <summary>plugin.json 里的 widgets[] 项。sizes / defaultSize 取 small、wide、large。</summary>
+public sealed class WidgetManifest
+{
+    public string Id { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string? Description { get; set; }
+    public string? Glyph { get; set; }
+    public List<string> Sizes { get; set; } = new();
+    public string? DefaultSize { get; set; }
+    public string? Targets { get; set; }
 }
 
 /// <summary>

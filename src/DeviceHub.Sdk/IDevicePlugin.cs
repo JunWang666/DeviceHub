@@ -73,6 +73,11 @@ public interface IDeviceChannel
 {
     /// <summary>申请访问设备；未授权会触发用户弹窗。</summary>
     Task<AccessScope> RequestAccessAsync(string deviceKey, string reason);
+    /// <summary>
+    /// 查询当前授权，不弹窗，设备离线也能查。已授权但离线的设备（侧边栏里的离线项）会在没被 Attach 过的情况下
+    /// 收到 GetStateAsync，此时应据此区分"未授权"与"未连接"。
+    /// </summary>
+    Task<AccessScope> GetAccessAsync(string deviceKey);
     Task<DeviceIoResult> GetFeatureAsync(string deviceKey, byte reportId, int length, string? channel = null);
     Task<DeviceIoResult> SetFeatureAsync(string deviceKey, byte[] report, string? channel = null);
     /// <summary>

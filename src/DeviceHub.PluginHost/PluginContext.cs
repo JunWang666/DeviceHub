@@ -29,6 +29,7 @@ public sealed class PluginContext : IPluginContext
     private sealed class Channel(string pid, IHostToAgentApi a) : IDeviceChannel
     {
         public Task<AccessScope> RequestAccessAsync(string deviceKey, string reason) => a.RequestDeviceAccessAsync(pid, deviceKey, reason);
+        public Task<AccessScope> GetAccessAsync(string deviceKey) => a.GetDeviceAccessAsync(pid, deviceKey);
         public Task<DeviceIoResult> GetFeatureAsync(string deviceKey, byte reportId, int length, string? channel = null) => a.GetFeatureAsync(pid, deviceKey, channel, reportId, length);
         public Task<DeviceIoResult> SetFeatureAsync(string deviceKey, byte[] report, string? channel = null) => a.SetFeatureAsync(pid, deviceKey, channel, report);
         public Task<DeviceIoResult> WriteOutputAsync(string deviceKey, byte[] report, string? channel = null) => a.WriteOutputAsync(pid, deviceKey, channel, report);

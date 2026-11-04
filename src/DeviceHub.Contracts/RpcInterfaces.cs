@@ -96,6 +96,9 @@ public interface IHostToAgentApi
     /// <summary>申请访问设备。未授权时 Agent 触发 UI 弹窗并等待结果。</summary>
     Task<AccessScope> RequestDeviceAccessAsync(string pluginId, string deviceKey, string reason);
 
+    /// <summary>查询当前授权（不弹窗、不要求设备在线）。子设备键按其继承的授权返回。</summary>
+    Task<AccessScope> GetDeviceAccessAsync(string pluginId, string deviceKey);
+
     // —— 设备 I/O 代理（核心校验授权后执行）。channel = 插件 manifest 声明的通道角色，null 为默认通道 ——
     Task<DeviceIoResult> GetFeatureAsync(string pluginId, string deviceKey, string? channel, byte reportId, int length);
     Task<DeviceIoResult> SetFeatureAsync(string pluginId, string deviceKey, string? channel, byte[] report);

@@ -1,12 +1,17 @@
 {
   "id": "com.devicehub.airpods",
   "displayName": "AirPods",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "sdkVersion": "1.0",
   "backendAssembly": "backend/DeviceHub.Plugin.AirPods.dll",
   "backendType": "DeviceHub.Plugin.AirPods.AirPodsPlugin",
   "uiAssembly": "ui/DeviceHub.Plugin.AirPods.Ui.dll",
   "uiPageType": "DeviceHub.Plugin.AirPods.Ui.AirPodsPageEntry",
+  "uiWidgetType": "DeviceHub.Plugin.AirPods.Ui.AirPodsWidgets",
+  "widgets": [
+    { "id": "battery", "title": "电量", "description": "左耳、右耳和充电盒的电量", "glyph": "", "sizes": ["small", "wide", "large"], "defaultSize": "wide" },
+    { "id": "listening", "title": "降噪模式", "description": "切换降噪 / 通透 / 自适应（需要 AAP 驱动）", "glyph": "", "sizes": ["wide"], "defaultSize": "wide" }
+  ],
   "devices": [
     {
       "name": "AirPods",

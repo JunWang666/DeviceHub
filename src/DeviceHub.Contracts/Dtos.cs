@@ -154,6 +154,31 @@ public sealed record PluginInfo
     public string? UiAssemblyPath { get; init; }
     /// <summary>UI 页面的入口类型全名（实现 IPluginPage）。</summary>
     public string? UiPageTypeName { get; init; }
+    /// <summary>主页小组件的提供类型全名（实现 IPluginWidgetProvider）；未单独声明时用 <see cref="UiPageTypeName"/>。</summary>
+    public string? UiWidgetTypeName { get; init; }
+    /// <summary>插件在 manifest 里声明的主页小组件。</summary>
+    public IReadOnlyList<WidgetInfo> Widgets { get; init; } = [];
+}
+
+/// <summary>主页小组件尺寸（网格单元：小 1×1，宽 2×1，大 2×2）。</summary>
+public enum WidgetSize { Small, Wide, Large }
+
+/// <summary>
+/// 插件声明的一种主页小组件。小组件绑定到插件管理的某台设备（或子设备）：
+/// 用户在主页上选"哪台设备的哪个小组件"，核心画卡片外框（设备名、图标），插件只提供内容。
+/// </summary>
+public sealed record WidgetInfo
+{
+    public required string Id { get; init; }
+    public required string Title { get; init; }
+    public string? Description { get; init; }
+    /// <summary>Segoe Fluent Icons 私用区字符；空则用设备图标。</summary>
+    public string? Glyph { get; init; }
+    /// <summary>支持的尺寸；空表示只有 <see cref="WidgetSize.Small"/>。</summary>
+    public IReadOnlyList<WidgetSize> Sizes { get; init; } = [];
+    public WidgetSize DefaultSize { get; init; } = WidgetSize.Small;
+    /// <summary>适用的设备：any = 任意，physical = 只有物理设备（如接收器、直连设备），child = 只有子设备。</summary>
+    public string Targets { get; init; } = "any";
 }
 
 /// <summary>安装插件包的结果。Previous 为安装前的版本（新插件为 null）。</summary>

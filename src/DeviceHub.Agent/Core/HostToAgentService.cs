@@ -34,7 +34,8 @@ public sealed class HostToAgentService : IHostToAgentApi
     {
         Check(pluginId);
         var device = _broker.Find(deviceKey);
-        if (device is null) return AccessScope.Denied;
+        // 设备不在线时没法弹窗征询，但已有的授权仍然有效：如实返回，不要把"未连接"说成"未授权"。
+        if (device is null) return _perms.GetGrant(pluginId, deviceKey);
         var manifest = _plugins.ActiveManifest(pluginId);
         var info = new PluginInfo
         {
@@ -45,6 +46,9 @@ public sealed class HostToAgentService : IHostToAgentApi
         };
         return await _perms.RequestAsync(info, device, reason);
     }
+
+    public Task<AccessScope> GetDeviceAccessAsync(string pluginId, string deviceKey)
+    { Check(pluginId); return Task.FromResult(_perms.GetGrant(pluginId, deviceKey)); }
 
     public Task<DeviceIoResult> GetFeatureAsync(string pluginId, string deviceKey, string? channel, byte reportId, int length)
     { Check(pluginId); return _broker.GetFeatureAsync(pluginId, deviceKey, channel, reportId, length); }

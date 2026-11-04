@@ -51,8 +51,10 @@ public sealed class Gk65ViewModel : INotifyPropertyChanged
     /// <summary>常亮没有速度可调。</summary>
     public bool SpeedEnabled => Authorized && State.Current.Panel.Mode != 0;
 
-    public bool Authorized => State.Authorized;
+    /// <summary>可以改设置：已授权且键盘在线（离线时只读显示上次保存的设置）。</summary>
+    public bool Authorized => State.Authorized && State.Connected;
     public bool ShowUnauthorized => !State.Authorized;
+    public bool ShowOffline => State.Authorized && !State.Connected;
 
     private string _status = "";
     public string Status { get => string.IsNullOrEmpty(_status) ? State.Status : _status; set => Set(ref _status, value); }
@@ -103,7 +105,7 @@ public sealed class Gk65ViewModel : INotifyPropertyChanged
     private void OnAll()
     {
         foreach (var n in new[] { nameof(PanelModeIndex), nameof(Brightness), nameof(Speed), nameof(SpeedEnabled),
-            nameof(Authorized), nameof(ShowUnauthorized), nameof(Status), nameof(SyncText), nameof(SourceNote) })
+            nameof(Authorized), nameof(ShowUnauthorized), nameof(ShowOffline), nameof(Status), nameof(SyncText), nameof(SourceNote) })
             OnChanged(n);
     }
 

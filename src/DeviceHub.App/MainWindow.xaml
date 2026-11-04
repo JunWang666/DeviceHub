@@ -35,6 +35,9 @@
                              OpenPaneLength="260"
                              SelectionChanged="Nav_SelectionChanged">
             <muxc:NavigationView.MenuItems>
+                <muxc:NavigationViewItem Content="主页" Tag="home">
+                    <muxc:NavigationViewItem.Icon><FontIcon Glyph="&#xE80F;"/></muxc:NavigationViewItem.Icon>
+                </muxc:NavigationViewItem>
                 <muxc:NavigationViewItem Content="新设备" Tag="new">
                     <muxc:NavigationViewItem.Icon><FontIcon Glyph="&#xE710;"/></muxc:NavigationViewItem.Icon>
                 </muxc:NavigationViewItem>

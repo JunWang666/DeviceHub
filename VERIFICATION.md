@@ -270,3 +270,22 @@ src\DeviceHub.App\bin\x64\Debug\net10.0-windows10.0.26100.0\win-x64\DeviceHub.Ap
   AirPods 耳机、GameSir 手柄、GK65 键盘、罗技接收器 USB、配对设备按类型（鼠标 / 键盘…）。模拟接收器检查：鼠标 U+E962、接收器 U+E88E。
   本机 GK65 未接，自检显示默认图标（从没在新版本下在线过，还没有记下的图标）。
 - 版本：应用 0.2.1；插件罗技 1.2.0，AirPods / GameSir / GK65 1.0.1。四个插件页面自检全部加载成功；分页与图标的实际外观未能截图确认。
+
+## 离线设备误报"未授权"、主页与插件小组件（2026-11-04）
+
+- **离线误报未授权**：侧边栏的离线设备（已授权、设备不在）打开页面时，插件从没 Attach 过它，`GetStateAsync` 返回默认状态 `Authorized=false`，页面显示"未授权"。
+  另外 Agent 的 `RequestDeviceAccessAsync` 在设备不在线时直接返回 Denied；GK65 的 `DetachAsync` 拔掉接收器时把 `Authorized` 清掉。
+  修复：SDK 新增 `IDeviceChannel.GetAccessAsync`（不弹窗、离线可查，经 `IHostToAgentApi.GetDeviceAccessAsync`）；四个插件第一次被问到未接管的设备时向核心查授权；
+  `RequestDeviceAccessAsync` 离线时返回已有授权；GK65 增加 `Connected`，离线时读回上次保存的设置、只读显示"未连接"，Detach 不再清授权。
+  实测：本机 GK65 授权在、接收器未接，自检 `离线设备 hid:1a2c:7fff:… authorized=True connected=False`。
+- **主页**：侧边栏顶部新增「主页」并作为默认页。卡片网格（VariableSizedWrapGrid，单元 184×160，小 1×1 / 宽 2×1 / 大 2×2），
+  右键或编辑模式下的「…」菜单：打开设备页、改尺寸、前移/后移、移除；编辑模式可拖动排序，卡片内容不响应点击。「添加小组件」可多选。
+  布局存在 `%LOCALAPPDATA%\DeviceHub\app\home.json`；没有布局文件时按当前设备生成默认布局（设备总览 + 每台设备的第一个小组件），用户改过才落盘。
+  内置小组件「设备总览」。设备被撤销授权 / 插件卸载 / 插件不再提供该小组件时卡片显示原因，不报错。
+- **插件小组件 API**：plugin.json 新增 `uiWidgetType` 与 `widgets[]`（id、title、description、glyph、sizes、defaultSize、targets = any/physical/child）；
+  UI 程序集实现 `IPluginWidgetProvider.CreateWidget(widgetId, size, bridge)`，bridge 与设备页同一套状态/方法。核心画外框（设备名、图标、菜单），插件只给内容。
+  `WidgetKit` 提供状态绑定（显示时读取 + 订阅推送，隐藏时退订）、电池图标和统一的数值/说明构件。
+- 首批小组件：罗技 电量（接收器上列出所有配对设备）/ DPI（上一档、下一档）；GameSir 电量；AirPods 电量（左 / 右 / 盒）/ 降噪模式；GK65 灯效（模式 + 亮度）。
+  自检新增：每个插件每个小组件的每种尺寸都创建一次，11 个组合全部成功。
+- 版本：插件罗技 1.3.0，AirPods / GameSir / GK65 1.1.0（依赖新 SDK 的 `GetAccessAsync`，需配新版 Agent）。
+- **未验证**：VM 截图为空白，主页与小组件的外观、拖动排序、右键菜单未目视确认；没有罗技 / AirPods / GameSir 真机在线，小组件的在线数据只按 DTO 走查。

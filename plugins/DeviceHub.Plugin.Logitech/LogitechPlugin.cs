@@ -83,7 +83,7 @@ public sealed class LogitechPlugin : IDevicePlugin
         var (_, st, ds) = Resolve(deviceKey);
         if (!DeviceKeys.IsChild(deviceKey)) return st;
         return ds is null
-            ? new LogitechState { Authorized = st.Authorized, IsChild = true, ReceiverKind = st.ReceiverKind, Status = "接收器上已没有这个设备" }
+            ? new LogitechState { Authorized = st.Authorized, IsChild = true, ReceiverKind = st.ReceiverKind, Status = st.Connected ? "接收器上已没有这个设备" : "" }
             : ChildView(st, ds);
     }
 
@@ -200,6 +200,7 @@ public sealed class LogitechPlugin : IDevicePlugin
     public async Task<string> InvokeAsync(string deviceKey, string method, string argsJson, CancellationToken ct)
     {
         // 子设备页的操作落到接收器状态里对应的配对设备上；I/O 一律用物理设备键。
+        await EnsureStateAsync(deviceKey);
         var (key, st, ds) = Resolve(deviceKey);
         var a = string.IsNullOrWhiteSpace(argsJson) ? default : JsonDocument.Parse(argsJson).RootElement;
 
@@ -381,7 +382,23 @@ public sealed class LogitechPlugin : IDevicePlugin
         }
     }
 
-    public Task<string> GetStateAsync(string deviceKey) => Task.FromResult(Json(View(deviceKey)));
+    public async Task<string> GetStateAsync(string deviceKey)
+    {
+        await EnsureStateAsync(deviceKey);
+        return Json(View(deviceKey));
+    }
+
+    /// <summary>
+    /// 已授权但离线的设备（侧边栏离线项）没被 Attach 过，第一次被问到时向核心查授权，
+    /// 免得默认状态把"未连接"显示成"未授权"。子设备按物理设备（接收器）的授权算。
+    /// </summary>
+    private async Task EnsureStateAsync(string deviceKey)
+    {
+        var key = DeviceKeys.TrySplit(deviceKey, out var parent, out _) ? parent : deviceKey;
+        if (_states.ContainsKey(key)) return;
+        var authorized = await _ctx.Device.GetAccessAsync(key) != AccessScope.Denied;
+        _states.TryAdd(key, new LogitechState { Authorized = authorized });
+    }
 
     public Task PrepareShutdownAsync()
     {

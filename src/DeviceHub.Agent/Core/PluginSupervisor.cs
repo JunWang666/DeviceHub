@@ -69,6 +69,8 @@ public sealed class PluginSupervisor : IDisposable
                 LastError = e?.LastError,
                 UiAssemblyPath = AbsUi(id, m),
                 UiPageTypeName = m?.UiPageType,
+                UiWidgetTypeName = m?.UiWidgetType ?? m?.UiPageType,
+                Widgets = m?.WidgetInfos() ?? [],
             });
         }
         return result;
@@ -288,6 +290,7 @@ public sealed class PluginSupervisor : IDisposable
             Id = id, DisplayName = m?.DisplayName ?? id, Version = m?.Version ?? "?",
             State = e.State, RestartCount = e.RestartCount, LastError = e.LastError,
             UiAssemblyPath = AbsUi(id, m), UiPageTypeName = m?.UiPageType,
+            UiWidgetTypeName = m?.UiWidgetType ?? m?.UiPageType, Widgets = m?.WidgetInfos() ?? [],
         };
     }
 
