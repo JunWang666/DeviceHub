@@ -135,6 +135,11 @@ public static class ChannelKinds
     public const string Continuity = "continuity";
     /// <summary>AirPods 的 AAP 控制通道（L2CAP PSM 0x1001，需第三方驱动）。</summary>
     public const string Aap = "aap";
+    /// <summary>
+    /// USB 串口（COM 口），如 4G 模块的 AT 口：WriteOutput 原样写入字节，ReadInput 返回下一段收到的字节（长度不定）。
+    /// 核心在插件第一次访问时打开端口、撤销授权或设备拔出时关闭；同一时间只有核心持有该端口。
+    /// </summary>
+    public const string Serial = "serial";
 }
 
 /// <summary>插件清单与当前运行信息。</summary>

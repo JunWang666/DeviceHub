@@ -209,7 +209,7 @@ public sealed class PluginManager
         var m = ActiveManifest(pluginId);
         if (m is null) return null;
         var parts = deviceKey.Split(':');
-        var bus = parts[0] switch { "hid" => "Hid", "bt" => "Bluetooth", _ => null };
+        var bus = parts[0] switch { "hid" => "Hid", "bt" => "Bluetooth", "ser" => "Serial", _ => null };
         const System.Globalization.NumberStyles hex = System.Globalization.NumberStyles.HexNumber;
         if (bus is null || parts.Length < 3 || !ushort.TryParse(parts[1], hex, null, out var vid)
             || !ushort.TryParse(parts[2], hex, null, out var pid)) return null;

@@ -1,0 +1,37 @@
+{
+  "id": "com.devicehub.quectel",
+  "displayName": "Quectel 4G 模块",
+  "version": "1.0.0",
+  "sdkVersion": "1.0",
+  "backendAssembly": "backend/DeviceHub.Plugin.Quectel.dll",
+  "backendType": "DeviceHub.Plugin.Quectel.QuectelPlugin",
+  "uiAssembly": "ui/DeviceHub.Plugin.Quectel.Ui.dll",
+  "uiPageType": "DeviceHub.Plugin.Quectel.Ui.QuectelPageEntry",
+  "uiWidgetType": "DeviceHub.Plugin.Quectel.Ui.QuectelWidgets",
+  "widgets": [
+    { "id": "signal", "title": "蜂窝信号", "description": "运营商、制式、频段与信号强度", "glyph": "", "sizes": ["small", "wide"], "defaultSize": "wide" }
+  ],
+  "devices": [
+    {
+      "name": "大疆 4G 模块（Quectel EG25-G）",
+      "bus": "Serial",
+      "vid": "0x2ca3",
+      "pid": ["0x4006"],
+      "channels": [
+        { "role": "at", "kind": "serial", "interface": 2 },
+        { "role": "nmea", "kind": "serial", "interface": 1, "optional": true }
+      ]
+    },
+    {
+      "name": "Quectel LTE 模块（EC25 / EG25）",
+      "bus": "Serial",
+      "vid": "0x2c7c",
+      "pid": ["0x0125"],
+      "channels": [
+        { "role": "at", "kind": "serial", "interface": 2 },
+        { "role": "nmea", "kind": "serial", "interface": 1, "optional": true }
+      ]
+    }
+  ],
+  "permissions": ["devices"]
+}

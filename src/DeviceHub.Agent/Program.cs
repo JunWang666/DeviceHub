@@ -48,7 +48,8 @@ public static class Program
         var perms = new PermissionService(lf.CreateLogger<PermissionService>(), dataDir);
         var plugins = new PluginManager(lf.CreateLogger<PluginManager>(), dataDir);
         var bluetooth = new BluetoothService(lf.CreateLogger<BluetoothService>());
-        var broker = new DeviceBroker(lf.CreateLogger<DeviceBroker>(), perms, plugins, bluetooth);
+        var serial = new SerialService(lf.CreateLogger<SerialService>());
+        var broker = new DeviceBroker(lf.CreateLogger<DeviceBroker>(), perms, plugins, bluetooth, serial);
         var storage = new StorageService(dataDir);
         var appHub = new AppHub(lf.CreateLogger<AppHub>());
         using var remap = new RemapService(lf.CreateLogger("Remap"), dataDir, appHub);
@@ -82,9 +83,12 @@ public static class Program
         });
         bluetooth.Changed += () => btDebounce.Change(500, Timeout.Infinite);
 
-        // —— USB 插拔：通知 UI 重新扫描拓扑（USB 页打开时才会真的去扫） ——
+        // —— USB 插拔：通知 UI 重新扫描拓扑（USB 页打开时才会真的去扫），并刷新设备列表、让插件接管/放开设备。
+        //    串口驱动比 USB 设备节点晚几秒才就绪（4G 模块开机），3 秒后再同步一次 ——
         using var usbWatcher = new Native.UsbWatcher();
         usbWatcher.Changed += appHub.UsbChanged;
+        using var usbLate = new Timer(_ => btDebounce.Change(0, Timeout.Infinite));
+        usbWatcher.Changed += () => { btDebounce.Change(0, Timeout.Infinite); usbLate.Change(3000, Timeout.Infinite); };
 
         // 启动已安装且未禁用的插件
         foreach (var id in plugins.PluginIds())

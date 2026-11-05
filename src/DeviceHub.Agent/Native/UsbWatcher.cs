@@ -18,7 +18,7 @@ public sealed class UsbWatcher : IDisposable
     {
         _debounce = new Timer(_ => Changed?.Invoke());
         _callback = OnNotify;
-        foreach (var guid in new[] { NativeUsb.GUID_DEVINTERFACE_USB_DEVICE, NativeUsb.GUID_DEVINTERFACE_USB_HUB })
+        foreach (var guid in new[] { NativeUsb.GUID_DEVINTERFACE_USB_DEVICE, NativeUsb.GUID_DEVINTERFACE_USB_HUB, GUID_DEVINTERFACE_COMPORT })
         {
             var filter = new CM_NOTIFY_FILTER
             {
@@ -44,6 +44,8 @@ public sealed class UsbWatcher : IDisposable
         _debounce.Dispose();
     }
 
+    /// <summary>COM 口接口（USB 串口驱动就绪时到达），串口设备靠它及时出现。</summary>
+    private static readonly Guid GUID_DEVINTERFACE_COMPORT = new("86e0d1e0-8089-11d0-9ce4-08003e301f73");
     private const uint CM_NOTIFY_FILTER_TYPE_DEVICEINTERFACE = 0;
     private const uint CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL = 0, CM_NOTIFY_ACTION_DEVICEINTERFACEREMOVAL = 1;
 

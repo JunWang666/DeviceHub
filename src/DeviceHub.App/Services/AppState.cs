@@ -51,7 +51,8 @@ public sealed class AppState
             .Select(g => new DeviceInfo
             {
                 DeviceKey = g.DeviceKey,
-                Bus = g.DeviceKey.StartsWith("bt:", StringComparison.Ordinal) ? DeviceBus.Bluetooth : DeviceBus.Hid,
+                Bus = g.DeviceKey.StartsWith("bt:", StringComparison.Ordinal) ? DeviceBus.Bluetooth
+                    : g.DeviceKey.StartsWith("ser:", StringComparison.Ordinal) ? DeviceBus.Serial : DeviceBus.Hid,
                 DisplayName = string.IsNullOrEmpty(g.DeviceDisplayName) ? "未知设备" : g.DeviceDisplayName,
                 DefaultName = g.DefaultName,
                 OwnerPluginId = g.PluginId,

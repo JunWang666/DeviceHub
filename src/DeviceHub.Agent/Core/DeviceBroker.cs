@@ -21,18 +21,20 @@ public sealed class DeviceBroker : IDisposable
     private readonly PermissionService _perms;
     private readonly PluginManager _plugins;
     private readonly BluetoothService _bt;
+    private readonly SerialService _serial;
     private readonly ConcurrentDictionary<string, SafeFileHandle> _openHandles = new(); // "deviceKey|channelId" → handle
     private readonly ConcurrentDictionary<string, NativeHid.HidPath> _channels = new(); // "deviceKey|channelId" → 集合
     private readonly ConcurrentDictionary<string, DeviceInfo> _devices = new();        // deviceKey → 最近一次枚举结果
     private readonly ConcurrentDictionary<string, (string PluginId, ChildDevice Child)> _children = new(); // 子设备键 → 发布者与内容
 
-    public DeviceBroker(ILogger<DeviceBroker> log, PermissionService perms, PluginManager plugins, BluetoothService bt)
+    public DeviceBroker(ILogger<DeviceBroker> log, PermissionService perms, PluginManager plugins, BluetoothService bt, SerialService serial)
     {
         _log = log;
+        _serial = serial;
         _perms = perms;
         _plugins = plugins;
         _bt = bt;
-        _perms.GrantRevoked += (_, deviceKey) => { CloseHandles(deviceKey); _bt.CloseAap(deviceKey); RemoveChildren(c => c.Key.StartsWith(deviceKey + DeviceKeys.ChildSeparator, StringComparison.Ordinal)); };
+        _perms.GrantRevoked += (_, deviceKey) => { CloseHandles(deviceKey); _bt.CloseAap(deviceKey); _serial.Close(deviceKey); RemoveChildren(c => c.Key.StartsWith(deviceKey + DeviceKeys.ChildSeparator, StringComparison.Ordinal)); };
     }
 
     public IReadOnlyList<DeviceInfo> Enumerate()
@@ -79,6 +81,12 @@ public sealed class DeviceBroker : IDisposable
                 Connected = true,
             };
             _devices[key] = dev;
+            list.Add(dev);
+        }
+        foreach (var dev in _serial.Devices())
+        {
+            if (list.Any(d => d.DeviceKey == dev.DeviceKey)) continue;
+            _devices[dev.DeviceKey] = dev;
             list.Add(dev);
         }
         foreach (var dev in _bt.Devices())
@@ -141,7 +149,7 @@ public sealed class DeviceBroker : IDisposable
 
     // —— 授权后的 I/O 代理。channel = 插件 manifest 里声明的通道角色，null 为默认（第一个声明的）——
     public Task<DeviceIoResult> GetFeatureAsync(string pluginId, string deviceKey, string? channel, byte reportId, int length)
-        => Guarded(pluginId, deviceKey, channel, (h, _) =>
+        => SerialService.IsSerialKey(deviceKey) ? NotOnSerial() : Guarded(pluginId, deviceKey, channel, (h, _) =>
         {
             var data = NativeHid.GetFeature(h, reportId, length);
             return data is null ? DeviceIoResult.Fail(DeviceIoStatus.Error, "GetFeature 失败")
@@ -149,13 +157,15 @@ public sealed class DeviceBroker : IDisposable
         });
 
     public Task<DeviceIoResult> SetFeatureAsync(string pluginId, string deviceKey, string? channel, byte[] report)
-        => Guarded(pluginId, deviceKey, channel, (h, _) =>
+        => SerialService.IsSerialKey(deviceKey) ? NotOnSerial() : Guarded(pluginId, deviceKey, channel, (h, _) =>
             NativeHid.SetFeature(h, report) ? DeviceIoResult.Success()
                                             : DeviceIoResult.Fail(DeviceIoStatus.Error, "SetFeature 失败"));
 
     /// <summary>写 Output 报告（WriteFile → 中断 OUT），按集合的 OutputReportByteLength 补零。aap 通道：发送一帧 AAP。</summary>
     public Task<DeviceIoResult> WriteOutputAsync(string pluginId, string deviceKey, string? channel, byte[] report)
-        => IsBluetooth(deviceKey)
+        => SerialService.IsSerialKey(deviceKey)
+            ? GuardedSerial(pluginId, deviceKey, channel, c => _serial.WriteAsync(deviceKey, c.Id, report))
+        : IsBluetooth(deviceKey)
             ? GuardedBt(pluginId, deviceKey, channel, (c, spec) => Task.FromResult(c.Kind == ChannelKinds.Aap
                 ? _bt.SendAap(deviceKey, spec.Psm, report)
                 : DeviceIoResult.Fail(DeviceIoStatus.Error, "该通道只读")))
@@ -171,6 +181,8 @@ public sealed class DeviceBroker : IDisposable
     public Task<DeviceIoResult> ReadInputAsync(string pluginId, string deviceKey, string? channel, int timeoutMs)
     {
         timeoutMs = Math.Clamp(timeoutMs, 1, 10_000);
+        if (SerialService.IsSerialKey(deviceKey))
+            return GuardedSerial(pluginId, deviceKey, channel, c => _serial.ReadAsync(deviceKey, c.Id, timeoutMs));
         if (IsBluetooth(deviceKey))
             return GuardedBt(pluginId, deviceKey, channel, (c, spec) => c.Kind == ChannelKinds.Aap
                 ? _bt.ReceiveAapAsync(deviceKey, spec.Psm, timeoutMs)
@@ -183,6 +195,34 @@ public sealed class DeviceBroker : IDisposable
     }
 
     private static bool IsBluetooth(string deviceKey) => deviceKey.StartsWith("bt:", StringComparison.Ordinal);
+
+    private static Task<DeviceIoResult> NotOnSerial() =>
+        Task.FromResult(DeviceIoResult.Fail(DeviceIoStatus.Error, "串口通道没有 Feature 报告"));
+
+    /// <summary>串口设备的授权 + 通道解析：插件只能读写自己声明过的 COM 口。</summary>
+    private async Task<DeviceIoResult> GuardedSerial(string pluginId, string deviceKey, string? channel,
+        Func<HidChannelInfo, Task<DeviceIoResult>> io)
+    {
+        if (_perms.GetGrant(pluginId, deviceKey) is AccessScope.Denied)
+            return DeviceIoResult.Fail(DeviceIoStatus.AccessDenied, "未授权");
+        try
+        {
+            if (!_devices.TryGetValue(deviceKey, out var dev)) { Enumerate(); _devices.TryGetValue(deviceKey, out dev); }
+            if (dev is null) return DeviceIoResult.Fail(DeviceIoStatus.DeviceGone);
+            var (ch, spec) = _plugins.ResolveChannelSpec(pluginId, dev, channel);
+            if (spec is null) return DeviceIoResult.Fail(DeviceIoStatus.AccessDenied, channel is null ? "插件未声明任何通道" : $"插件未声明通道 {channel}");
+            if (ch is null) return DeviceIoResult.Fail(DeviceIoStatus.DeviceGone, "设备没有该串口");
+            var r = await io(ch);
+            // 端口消失（拔出）时刷新一次枚举，下次按新状态解析。
+            if (r.Status == DeviceIoStatus.DeviceGone) Enumerate();
+            return r;
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "串口 I/O 异常 {Device}", deviceKey);
+            return DeviceIoResult.Fail(DeviceIoStatus.Error, ex.Message);
+        }
+    }
 
     /// <summary>蓝牙设备的授权 + 通道解析；Feature 报告这类 HID 专有操作不会走到这里。</summary>
     private async Task<DeviceIoResult> GuardedBt(string pluginId, string deviceKey, string? channel,
@@ -259,5 +299,6 @@ public sealed class DeviceBroker : IDisposable
     public void Dispose()
     {
         foreach (var h in _openHandles.Values) { try { h.Dispose(); } catch { } }
+        _serial.Dispose();
     }
 }

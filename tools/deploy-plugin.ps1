@@ -47,5 +47,7 @@ Deploy-One "DeviceHub.Plugin.AirPods" "DeviceHub.Plugin.AirPods.Ui" | Out-Null
 Deploy-One "DeviceHub.Plugin.GameSir" "DeviceHub.Plugin.GameSir.Ui" | Out-Null
 # Logitech HID++ plugin
 Deploy-One "DeviceHub.Plugin.Logitech" "DeviceHub.Plugin.Logitech.Ui" | Out-Null
+# Quectel 4G module plugin (AT port over the core's serial channel)
+Deploy-One "DeviceHub.Plugin.Quectel" "DeviceHub.Plugin.Quectel.Ui" | Out-Null
 
 Write-Host "done. plugin store: $data\plugins"

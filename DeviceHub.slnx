@@ -12,6 +12,12 @@
     <Project Path="plugins/DeviceHub.Plugin.GameSir/DeviceHub.Plugin.GameSir.csproj">
       <Platform Project="x64" />
     </Project>
+    <Project Path="plugins/DeviceHub.Plugin.Quectel.Ui/DeviceHub.Plugin.Quectel.Ui.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="plugins/DeviceHub.Plugin.Quectel/DeviceHub.Plugin.Quectel.csproj">
+      <Platform Project="x64" />
+    </Project>
     <Project Path="plugins/DeviceHub.Plugin.Logitech.Ui/DeviceHub.Plugin.Logitech.Ui.csproj">
       <Platform Project="x64" />
     </Project>

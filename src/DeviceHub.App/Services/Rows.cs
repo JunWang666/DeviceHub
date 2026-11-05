@@ -35,6 +35,7 @@ public static class Fmt
     {
         DeviceBus.Hid => $"USB HID · {d.Vid:X4}:{d.Pid:X4}",
         DeviceBus.Bluetooth => $"蓝牙 · {(d.Connected ? "已连接" : "未连接")}",
+        DeviceBus.Serial => $"USB 串口 · {d.Vid:X4}:{d.Pid:X4}",
         _ => $"{d.Bus} · {d.Vid:X4}:{d.Pid:X4}",
     };
 

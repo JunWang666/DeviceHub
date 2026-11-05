@@ -11,5 +11,6 @@
   <ItemGroup>
     <ProjectReference Include="..\DeviceHub.Contracts\DeviceHub.Contracts.csproj" />
     <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.0" />
+    <PackageReference Include="System.IO.Ports" Version="10.0.0" />
   </ItemGroup>
 </Project>
