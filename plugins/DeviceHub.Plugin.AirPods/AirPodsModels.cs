@@ -18,6 +18,9 @@ public sealed record AirPodsModel(ushort Id, string Name, bool HeadWorn = false,
         new(0x2013, "AirPods（第 3 代）"),
         new(0x2019, "AirPods 4"),
         new(0x201B, "AirPods 4（主动降噪款）", Anc: true, Adaptive: true, ConversationAwareness: true),
+        // 0x2030：用户真机（AirPods 5，无线充电盒款）的蓝牙 Device ID ProductId，2026-11 实测。
+        // AirPods 5 全系降噪；自适应 / 对话感知按 AirPods 4 降噪款推定，未经 AAP 实测。其他充电盒款若 Id 不同需另加。
+        new(0x2030, "AirPods 5", Anc: true, Adaptive: true, ConversationAwareness: true),
         new(0x200E, "AirPods Pro", Anc: true),
         new(0x2014, "AirPods Pro 2", Anc: true, Adaptive: true, ConversationAwareness: true),
         new(0x2024, "AirPods Pro 2（USB-C）", Anc: true, Adaptive: true, ConversationAwareness: true),
