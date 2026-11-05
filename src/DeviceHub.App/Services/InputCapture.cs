@@ -21,7 +21,7 @@ public sealed class InputCapture
         AppState.Instance.Client.Disconnected += () => AppState.Instance.OnUi(() => Handle(new InputCaptureEvent { Done = true }));
     }
 
-    public bool Active => _tcs is not null || _step is not null;
+    public bool Active => _tcs is not null || _step is not null || _devTcs is not null;
 
     /// <summary>录一个按键；返回 null 表示取消 / 超时。held：按住修饰键时实时回报。</summary>
     public async Task<InputTrigger?> CaptureAsync(CaptureMode mode, Action<KeyModifiers>? held = null)
@@ -45,11 +45,24 @@ public sealed class InputCapture
         await agent.StartInputCaptureAsync(CaptureMode.Macro);
     }
 
+    /// <summary>识别设备：下一次键盘按键或鼠标移动来自哪个设备（不吞输入）；取消 / 超时返回 null。</summary>
+    public async Task<InputDeviceInfo?> IdentifyDeviceAsync()
+    {
+        if (AppState.Instance.Client.Agent is not { } agent) return null;
+        Cancel();
+        var tcs = new TaskCompletionSource<InputDeviceInfo?>();
+        _devTcs = tcs;
+        await agent.StartInputCaptureAsync(CaptureMode.Device);
+        return await tcs.Task;
+    }
+
+    private TaskCompletionSource<InputDeviceInfo?>? _devTcs;
+
     public void Stop() => _ = AppState.Instance.Client.Agent?.StopInputCaptureAsync();
 
     private void Cancel()
     {
-        if (!Active) return;
+        if (!Active && _devTcs is null) return;
         Stop();
         Handle(new InputCaptureEvent { Done = true });
     }
@@ -57,12 +70,14 @@ public sealed class InputCapture
     private void Handle(InputCaptureEvent e)
     {
         if (e.Step is { } s) _step?.Invoke(s);
+        if (e.Device is { } d) _devTcs?.TrySetResult(d);
         if (e.Trigger is { } t) _tcs?.TrySetResult(t);
         else if (!e.Done) _held?.Invoke(e.Held);
         if (!e.Done) return;
         _tcs?.TrySetResult(null);
+        _devTcs?.TrySetResult(null);
         var done = _done;
-        _tcs = null; _held = null; _step = null; _done = null;
+        _tcs = null; _held = null; _step = null; _done = null; _devTcs = null;
         done?.Invoke();
     }
 }

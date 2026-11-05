@@ -65,6 +65,8 @@ public interface IAgentApi
     Task StopInputCaptureAsync();
     /// <summary>按键映射引擎是否在运行（钩子安装失败时为 false，附原因）。</summary>
     Task<string?> GetRemapEngineErrorAsync();
+    /// <summary>当前连接的键盘和鼠标（供"仅在这些设备上生效"选择）。</summary>
+    Task<IReadOnlyList<InputDeviceInfo>> ListInputDevicesAsync();
 }
 
 /// <summary>

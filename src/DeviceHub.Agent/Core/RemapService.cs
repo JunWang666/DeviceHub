@@ -83,6 +83,7 @@ public sealed class RemapService : IDisposable
         _config = Load();
         _kbProc = KeyboardProc;
         _msProc = MouseProc;
+        _rawProc = RawProc;
         _thread = new Thread(HookThread) { IsBackground = true, Name = "RemapHooks", Priority = ThreadPriority.Highest };
         _thread.Start();
         _ = Task.Run(EmitLoopAsync);
@@ -137,6 +138,60 @@ public sealed class RemapService : IDisposable
 
     private bool NeedKeyboard() => _capture is not null || (_config.Enabled && _config.Rules.Any(r => r.Enabled && r.Trigger.Kind == TriggerKind.Key));
     private bool NeedMouse() => _capture is CaptureMode.Trigger || (_config.Enabled && _config.Rules.Any(r => r.Enabled && r.Trigger.Kind == TriggerKind.Mouse));
+    /// <summary>有按设备生效的规则、或在识别设备时才收 Raw Input（鼠标移动的 WM_INPUT 很密）。</summary>
+    private bool NeedRaw() => _capture is CaptureMode.Device ||
+        (_config.Enabled && _config.Rules.Any(r => r.Enabled && r.Trigger.Kind != TriggerKind.Device && r.Devices is { Count: > 0 }));
+
+    // ———————————————————— Raw Input：最近一次有输入的键盘 / 鼠标 ————————————————————
+
+    private nint _rawHwnd;
+    private bool _rawOn;
+    private readonly RawInput.WndProc _rawProc;
+    private nint _lastKb, _lastMouse;
+    private readonly Dictionary<nint, int> _capMove = new(); // 只在钩子线程上用
+    private int _capMoveSession;
+    /// <summary>自检用：替代"最近的键盘"。</summary>
+    internal InputDeviceInfo? TestKeyboard;
+
+    private nint RawProc(nint h, uint m, nint w, nint l)
+    {
+        if (m == RawInput.WM_INPUT)
+        {
+            var (dev, kb) = RawInput.Header(l);
+            if (dev != 0) // 注入的输入（包括本引擎发出的）句柄为 0，不算
+            {
+                if (kb) _lastKb = dev; else _lastMouse = dev;
+                if (_capture is CaptureMode.Device) IdentifyDevice(dev, kb, l);
+            }
+        }
+        return RawInput.DefWindowProc(h, m, w, l);
+    }
+
+    /// <summary>识别设备：键盘任意按键立即认定；鼠标要移动一段距离（避免桌上另一只鼠标的抖动）。</summary>
+    private void IdentifyDevice(nint dev, bool kb, nint lParam)
+    {
+        if (_capMoveSession != _captureSession) { _capMove.Clear(); _capMoveSession = _captureSession; }
+        if (!kb)
+        {
+            int moved = _capMove.GetValueOrDefault(dev) + RawInput.MouseMove(lParam);
+            _capMove[dev] = moved;
+            if (moved < 40) return;
+        }
+        var info = RawInput.Resolve(dev, kb);
+        if (info is null) return;
+        lock (_gate)
+        {
+            if (_capture is not CaptureMode.Device) return;
+            EndCapture(new InputCaptureEvent { Device = info, Done = true });
+        }
+    }
+
+    private InputDeviceInfo? CurrentDevice(TriggerKind kind) => kind switch
+    {
+        TriggerKind.Key => TestKeyboard ?? RawInput.Resolve(_lastKb, true),
+        TriggerKind.Mouse => RawInput.Resolve(_lastMouse, false),
+        _ => null,
+    };
 
     // ———————————————————— 钩子线程 ————————————————————
 
@@ -144,6 +199,7 @@ public sealed class RemapService : IDisposable
     {
         _threadId = GetCurrentThreadId();
         PeekMessage(out _, 0, 0, 0, 0); // 建消息队列，之后 PostThreadMessage 才收得到
+        _rawHwnd = RawInput.CreateMessageWindow(_rawProc);
         InstallHooks();
         while (GetMessage(out var msg, 0, 0, 0) > 0)
         {
@@ -163,10 +219,16 @@ public sealed class RemapService : IDisposable
     /// <summary>按需装 / 卸钩子（只在钩子线程上调用）。</summary>
     private void InstallHooks()
     {
-        bool kb, ms;
-        lock (_gate) { kb = NeedKeyboard(); ms = NeedMouse(); }
+        bool kb, ms, raw;
+        lock (_gate) { kb = NeedKeyboard(); ms = NeedMouse(); raw = NeedRaw(); }
         var mod = GetModuleHandle(null);
         string? err = null;
+        if (raw != _rawOn && _rawHwnd != 0)
+        {
+            if (RawInput.Register(raw ? _rawHwnd : 0)) _rawOn = raw;
+            else if (raw) err = $"注册 Raw Input 失败（错误 {System.Runtime.InteropServices.Marshal.GetLastWin32Error()}），按设备生效的规则无法判断设备";
+            if (!raw) { _lastKb = _lastMouse = 0; _capMove.Clear(); }
+        }
         if (kb && _kbHook == 0)
         {
             _kbHook = SetWindowsHookEx(WH_KEYBOARD_LL, _kbProc, mod, 0);
@@ -356,17 +418,37 @@ public sealed class RemapService : IDisposable
 
     // ———————————————————— 规则匹配与执行 ————————————————————
 
+    /// <summary>
+    /// 找匹配的规则。范围越具体越优先：指定设备 + 指定程序 &gt; 指定设备 &gt; 指定程序 &gt; 全局；同等具体时取靠前的。
+    /// 设备按"最近一次有输入的键盘 / 鼠标"判断（见 <see cref="RawInput"/>）；设备按键（插件上报）本身带设备，不看设备范围。
+    /// </summary>
     private RemapRule? Find(TriggerKind kind, Func<InputTrigger, bool> match, KeyModifiers mods, ref string? fg)
     {
-        RemapRule? global = null;
+        RemapRule? best = null;
+        int bestScore = -1;
+        InputDeviceInfo? dev = null;
+        bool devResolved = false;
         foreach (var r in _config.Rules)
         {
             if (!r.Enabled || r.Trigger.Kind != kind || r.Trigger.Modifiers != mods || !match(r.Trigger)) continue;
-            if (string.IsNullOrWhiteSpace(r.Apps)) { global ??= r; continue; }
-            fg ??= ForegroundProcess();
-            if (AppMatches(r.Apps, fg)) return r; // 指定程序的规则优先于全局规则
+            bool hasApps = !string.IsNullOrWhiteSpace(r.Apps);
+            bool hasDev = kind != TriggerKind.Device && r.Devices is { Count: > 0 };
+            int score = (hasDev ? 2 : 0) + (hasApps ? 1 : 0);
+            if (score <= bestScore) continue;
+            if (hasApps)
+            {
+                fg ??= ForegroundProcess();
+                if (!AppMatches(r.Apps!, fg)) continue;
+            }
+            if (hasDev)
+            {
+                if (!devResolved) { dev = CurrentDevice(kind); devResolved = true; }
+                if (dev is null || !r.Devices!.Any(d => d.Matches(dev))) continue;
+            }
+            best = r;
+            bestScore = score;
         }
-        return global;
+        return best;
     }
 
     private static bool AppMatches(string apps, string fg)
@@ -596,6 +678,8 @@ public sealed class RemapService : IDisposable
 
     private bool CaptureKey(CaptureMode mode, int vk, bool down, bool repeat)
     {
+        // 识别设备不吞键：被钩子吞掉的输入不产生 Raw Input，就认不出设备了
+        if (mode == CaptureMode.Device) return false;
         if (down) { if (!repeat) _capDowned.Add(vk); }
         else if (!_capDowned.Remove(vk)) return false;
 

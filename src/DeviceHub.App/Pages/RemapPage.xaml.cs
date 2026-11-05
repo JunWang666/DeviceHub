@@ -123,7 +123,11 @@ public sealed partial class RemapPage : Page
         var main = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { from, arrow, to } };
         var scope = new TextBlock
         {
-            Text = string.IsNullOrWhiteSpace(r.Apps) ? "所有程序" : "仅在 " + r.Apps,
+            Text = (string.IsNullOrWhiteSpace(r.Apps) ? "所有程序" : "仅在 " + r.Apps)
+                 + (r.Devices is { Count: > 0 } ds && r.Trigger.Kind != TriggerKind.Device
+                     ? " · 仅来自 " + string.Join("、", ds.Select(d => d.Name ?? d.Id))
+                     : r.Trigger.Kind == TriggerKind.Device ? "" : " · 所有设备"),
+            TextTrimming = TextTrimming.CharacterEllipsis,
             Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
             Foreground = Res("TextFillColorSecondaryBrush"),
         };
@@ -202,12 +206,15 @@ public sealed partial class RemapPage : Page
         }
         var r = await RuleDialog.ShowAsync(XamlRoot, null, _config.Macros, Tabs.SelectedItem == ShortcutsTab);
         if (r is null) return;
-        // 同一个触发键（同样的程序范围）只留一条，新规则替换旧规则
-        _config.Rules.RemoveAll(x => x.Trigger.SameSource(r.Trigger) && (x.Apps ?? "") == (r.Apps ?? ""));
+        // 同一个触发键、同样的程序和设备范围只留一条，新规则替换旧规则（范围不同的可以并存，越具体越优先）
+        _config.Rules.RemoveAll(x => x.Trigger.SameSource(r.Trigger) && (x.Apps ?? "") == (r.Apps ?? "") && DevKey(x) == DevKey(r));
         _config.Rules.Add(r);
         SwitchToRuleTab(r);
         await SaveAsync();
     }
+
+    private static string DevKey(RemapRule r) =>
+        string.Join("|", (r.Devices ?? []).Select(d => $"{d.Kind}:{d.Id}".ToUpperInvariant()).Order());
 
     /// <summary>录到的是组合键就切到「快捷键」分页（反之亦然），让用户看到刚加的规则。</summary>
     private void SwitchToRuleTab(RemapRule r)

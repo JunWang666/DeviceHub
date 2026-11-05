@@ -205,7 +205,24 @@ public static class RuleDialog
         kind.SelectionChanged += (_, _) => ShowAction();
         ShowAction();
 
-        var apps = new TextBox { Text = r.Apps ?? "", PlaceholderText = "留空 = 所有程序；多个用分号分隔，如 chrome.exe; code.exe" };
+        var apps = new AppScopeEditor(r.Apps);
+        IReadOnlyList<InputDeviceInfo> present = [];
+        try { if (AppState.Instance.Client.Agent is { } agent) present = await agent.ListInputDevicesAsync(); } catch { }
+        var devices = new DeviceScopeEditor(present, r.Devices);
+        var devHeader = Header("仅在这些设备上生效");
+        var devNote = new TextBlock
+        {
+            Text = "设备按键（如罗技手势键）本身就属于某个设备，不需要再选设备。",
+            Style = KeyPicker.Caption(), Foreground = KeyPicker.Brush("TextFillColorSecondaryBrush"), TextWrapping = TextWrapping.Wrap,
+        };
+        void ShowDevices()
+        {
+            bool device = trigger.Value?.Kind == TriggerKind.Device;
+            devices.Visibility = device ? Visibility.Collapsed : Visibility.Visible;
+            devNote.Visibility = device ? Visibility.Visible : Visibility.Collapsed;
+        }
+        trigger.Changed += ShowDevices;
+        ShowDevices();
         var error = new TextBlock { Foreground = KeyPicker.Brush("SystemFillColorCriticalBrush"), TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
 
         var body = new StackPanel
@@ -216,6 +233,7 @@ public static class RuleDialog
                 Header("按下"), trigger,
                 Header("执行"), kind, actionHost,
                 Header("仅在这些程序中生效"), apps,
+                devHeader, devices, devNote,
                 error,
             },
         };
@@ -265,7 +283,8 @@ public static class RuleDialog
             Path = ak == RemapActionKind.Run ? path.Text.Trim() : null,
             Args = ak == RemapActionKind.Run && args.Text.Trim().Length > 0 ? args.Text.Trim() : null,
         };
-        r.Apps = apps.Text.Trim().Length > 0 ? apps.Text.Trim() : null;
+        r.Apps = apps.Value;
+        r.Devices = r.Trigger.Kind == TriggerKind.Device ? null : devices.Value;
         return r;
     }
 

@@ -82,6 +82,39 @@ public sealed class RemapRule
     public RemapAction Action { get; set; } = new();
     /// <summary>只在这些程序（进程名，如 "chrome.exe"，分号分隔）在前台时生效；空 = 全局。</summary>
     public string? Apps { get; set; }
+    /// <summary>
+    /// 只对来自这些键盘 / 鼠标的输入生效（按 <see cref="InputDeviceInfo.Id"/> 匹配）；空 = 所有设备。设备按键（插件上报）本身就带设备，忽略此项。
+    /// 低级钩子拿不到来源设备，核心用 Raw Input 记下"最近一次有输入的键盘 / 鼠标"来判断，见 <see cref="InputDeviceInfo"/>。
+    /// </summary>
+    public List<DeviceFilter>? Devices { get; set; }
+}
+
+/// <summary>按设备生效的条件。</summary>
+public sealed class DeviceFilter
+{
+    /// <summary>同 <see cref="InputDeviceInfo.Id"/>。</summary>
+    public string Id { get; set; } = "";
+    /// <summary>保存时的显示名（设备不在线时也能显示）。</summary>
+    public string? Name { get; set; }
+    public InputDeviceKind Kind { get; set; }
+
+    public bool Matches(InputDeviceInfo d) => d.Kind == Kind && string.Equals(d.Id, Id, StringComparison.OrdinalIgnoreCase);
+}
+
+public enum InputDeviceKind { Keyboard, Mouse }
+
+/// <summary>系统里的一个键盘 / 鼠标（Raw Input 设备，同一 Id 的多个集合合并为一个）。</summary>
+public sealed class InputDeviceInfo
+{
+    public InputDeviceKind Kind { get; set; }
+    /// <summary>
+    /// 跨重启稳定的标识：有 VID/PID 的设备为 "046D:C52B"（同型号的两个设备不区分，接收器上的多个设备算同一个）；
+    /// 没有的（笔记本内置 PS/2 键盘、触控板等）为设备实例路径，如 "ACPI#PNP0303#4&amp;1d401fb5&amp;0"。
+    /// </summary>
+    public string Id { get; set; } = "";
+    public ushort Vid { get; set; }
+    public ushort Pid { get; set; }
+    public string Name { get; set; } = "";
 }
 
 public enum MacroStepKind { KeyTap, KeyDown, KeyUp, Text, Delay, MouseClick, MouseDown, MouseUp }
@@ -116,7 +149,11 @@ public sealed class RemapConfig
 }
 
 /// <summary>录制模式：Trigger = 录一个触发键（单键 / 组合键 / 鼠标键 / 设备按键）；Macro = 连续录制宏步骤。</summary>
-public enum CaptureMode { Trigger, Keys, Macro }
+/// <summary>
+/// 录制模式：Trigger = 录一个触发键（单键 / 组合键 / 鼠标键 / 设备按键）；Keys = 录目标按键；Macro = 连续录制宏步骤；
+/// Device = 识别设备（下一次键盘按键或鼠标移动来自哪个设备；这个模式不吞输入）。
+/// </summary>
+public enum CaptureMode { Trigger, Keys, Macro, Device }
 
 /// <summary>录制期间 Agent 推给 App 的事件（录制期间被录到的输入不会传给其他程序）。</summary>
 public sealed class InputCaptureEvent
@@ -129,6 +166,8 @@ public sealed class InputCaptureEvent
     public bool Done { get; set; }
     /// <summary>录制中当前按住的修饰键（供界面实时显示 "Ctrl + …"）。</summary>
     public KeyModifiers Held { get; set; }
+    /// <summary>Device 模式：识别到的设备。</summary>
+    public InputDeviceInfo? Device { get; set; }
 }
 
 /// <summary>插件上报的设备按键事件（插件 → 核心）。</summary>

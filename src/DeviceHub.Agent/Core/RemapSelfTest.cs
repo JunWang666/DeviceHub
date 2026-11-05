@@ -113,8 +113,35 @@ internal static class RemapSelfTest
         Console.WriteLine($"REMAPTEST {(devOk ? "PASS" : "FAIL")} capture device button: {dt?.Name}");
         remap.OnDeviceInput("p", "d", "测试鼠标", new DeviceInputEvent { ControlId = "00C3", Name = "手势键", Pressed = false });
 
-        // 7. 停用后不再映射
+        // 7. 按设备生效：同一个 F13，指定键盘上映射成 F15，其他键盘仍走全局的 F13 → F14；指定程序的规则不匹配前台时不生效
         var cfg = remap.GetConfig();
+        cfg.Rules.Add(new RemapRule
+        {
+            Trigger = new InputTrigger { Kind = TriggerKind.Key, Key = F13 },
+            Action = new RemapAction { Kind = RemapActionKind.Keys, Key = F15 },
+            Devices = [new DeviceFilter { Id = "1234:5678", Kind = InputDeviceKind.Keyboard }],
+        });
+        cfg.Rules.Add(new RemapRule
+        {
+            Trigger = new InputTrigger { Kind = TriggerKind.Key, Key = F13 },
+            Action = new RemapAction { Kind = RemapActionKind.Keys, Key = F16 },
+            Apps = "no-such-app.exe",
+        });
+        remap.SaveConfig(cfg);
+        await Task.Delay(300);
+        remap.TestKeyboard = new InputDeviceInfo { Kind = InputDeviceKind.Keyboard, Id = "1234:5678" };
+        lock (Seen) Seen.Clear();
+        Inject((F13, true), (F13, false));
+        await Task.Delay(150);
+        Check("device-scoped rule wins on matching keyboard", [(F15, true), (F15, false)]);
+        remap.TestKeyboard = new InputDeviceInfo { Kind = InputDeviceKind.Keyboard, Id = "1111:2222" };
+        Inject((F13, true), (F13, false));
+        await Task.Delay(150);
+        Check("other keyboard falls back to global rule", [(F14, true), (F14, false)]);
+        remap.TestKeyboard = null;
+
+        // 8. 停用后不再映射
+        cfg = remap.GetConfig();
         cfg.Enabled = false;
         remap.SaveConfig(cfg);
         await Task.Delay(300);
@@ -123,6 +150,7 @@ internal static class RemapSelfTest
         await Task.Delay(150);
         Check("disabled passes through", []);
 
+        foreach (var d in Native.RawInput.List()) Console.WriteLine($"REMAPTEST device {d.Kind} [{d.Id}] {d.Name}");
         Console.WriteLine($"REMAPTEST DONE fails={fails} engineError={remap.Error ?? "none"}");
         return fails == 0 ? 0 : 1;
     }

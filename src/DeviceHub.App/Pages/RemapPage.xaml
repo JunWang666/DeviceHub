@@ -18,7 +18,7 @@
                           OnContent="已启用" OffContent="已停用" Toggled="EnabledToggle_Toggled"/>
         </Grid>
         <TextBlock Grid.Row="1" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                   Text="把键盘按键、组合键、鼠标侧键 / 中键 / 滚轮倾斜，以及设备上被接管的特殊按键（如罗技手势键）映射成其他按键、快捷键、文本、宏或启动程序。映射由 DeviceHub 后台执行，关闭窗口后仍然生效。"/>
+                   Text="把键盘按键、组合键、鼠标侧键 / 中键 / 滚轮倾斜，以及设备上被接管的特殊按键（如罗技手势键）映射成其他按键、快捷键、文本、宏或启动程序。每条映射可以只在指定程序、指定键盘 / 鼠标上生效，同一个键可以按程序和设备设不同的映射（越具体越优先：设备 + 程序 &gt; 设备 &gt; 程序 &gt; 全部）。映射由 DeviceHub 后台执行，关闭窗口后仍然生效。"/>
 
         <InfoBar x:Name="EngineBar" Grid.Row="2" IsOpen="False" IsClosable="False" Severity="Warning" Margin="0,4,0,0"/>
 

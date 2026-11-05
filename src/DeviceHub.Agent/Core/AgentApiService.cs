@@ -202,6 +202,7 @@ public sealed class AgentApiService : IAgentApi
     public Task StartInputCaptureAsync(CaptureMode mode) { _remap.StartCapture(mode); return Task.CompletedTask; }
     public Task StopInputCaptureAsync() { _remap.StopCapture(); return Task.CompletedTask; }
     public Task<string?> GetRemapEngineErrorAsync() => Task.FromResult(_remap.Error);
+    public Task<IReadOnlyList<InputDeviceInfo>> ListInputDevicesAsync() => Task.FromResult(Native.RawInput.List());
 
     private static string? PeekId(string packagePath)
     {
