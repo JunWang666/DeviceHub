@@ -52,6 +52,19 @@ public interface IAgentApi
 
     /// <summary>扫描 USB 拓扑（主控制器 → 集线器 → 端口 → 设备）及诊断结论。只读，不需要设备授权。</summary>
     Task<UsbTopology> GetUsbTopologyAsync();
+
+    // —— 按键映射（工具）——
+    Task<RemapConfig> GetRemapConfigAsync();
+    /// <summary>保存并立即生效。</summary>
+    Task SaveRemapConfigAsync(RemapConfig config);
+    /// <summary>
+    /// 开始录制：之后的键盘 / 鼠标 / 设备按键经 <see cref="IAppCallback.OnInputCaptured"/> 推给 UI，且不再传给其他程序。
+    /// 录到（Trigger / Keys 模式）、超时或 UI 断开时自动结束。
+    /// </summary>
+    Task StartInputCaptureAsync(CaptureMode mode);
+    Task StopInputCaptureAsync();
+    /// <summary>按键映射引擎是否在运行（钩子安装失败时为 false，附原因）。</summary>
+    Task<string?> GetRemapEngineErrorAsync();
 }
 
 /// <summary>
@@ -68,6 +81,8 @@ public interface IAppCallback
     void OnOsd(OsdMessage message);
     /// <summary>有 USB 设备或集线器插拔（已合并连续事件），UI 可重新扫描拓扑。</summary>
     void OnUsbChanged();
+    /// <summary>按键录制事件（见 <see cref="IAgentApi.StartInputCaptureAsync"/>）。</summary>
+    void OnInputCaptured(InputCaptureEvent e);
 }
 
 /// <summary>
@@ -95,6 +110,9 @@ public interface IHostToAgentApi
 {
     /// <summary>申请访问设备。未授权时 Agent 触发 UI 弹窗并等待结果。</summary>
     Task<AccessScope> RequestDeviceAccessAsync(string pluginId, string deviceKey, string reason);
+
+    /// <summary>查询当前授权（不弹窗、不要求设备在线）。子设备键按其继承的授权返回。</summary>
+    Task<AccessScope> GetDeviceAccessAsync(string pluginId, string deviceKey);
 
     // —— 设备 I/O 代理（核心校验授权后执行）。channel = 插件 manifest 声明的通道角色，null 为默认通道 ——
     Task<DeviceIoResult> GetFeatureAsync(string pluginId, string deviceKey, string? channel, byte reportId, int length);
@@ -124,4 +142,10 @@ public interface IHostToAgentApi
 
     /// <summary>子设备已不存在：撤销其授权并从设备列表移除。插件必须已获得父设备的 Always 授权。</summary>
     Task ForgetChildAsync(string pluginId, string parentKey, string childId);
+
+    /// <summary>
+    /// 设备按键事件（系统收不到、由插件从设备协议里读到的按键，如罗技鼠标被转发的手势键）。
+    /// deviceKey 必须是该插件已获 Always 授权的设备（或其子设备）。交给按键映射处理。
+    /// </summary>
+    Task RaiseDeviceInputAsync(string pluginId, string deviceKey, DeviceInputEvent e);
 }

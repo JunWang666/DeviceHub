@@ -13,6 +13,7 @@ public sealed class Gk65StateDto
     public int Dpi { get; set; } = 800;
     public ProfileDto[] Profiles { get; set; } = { new(), new(), new() };
     public bool Authorized { get; set; }
+    public bool Connected { get; set; }
     public string Status { get; set; } = "";
     public string Firmware { get; set; } = "(未知)";
     /// <summary>0 = DeviceHub 上次保存，1 = 官方驱动导入，2 = 默认值（对应后端 StateSource）。</summary>

@@ -23,13 +23,15 @@ public sealed class PluginSupervisor : IDisposable
     private readonly StorageService _storage;
     private readonly AppHub _appHub;
     private readonly string _hostExe;
+    private readonly RemapService _remap;
     private readonly ConcurrentDictionary<string, HostEntry> _hosts = new();
 
     private const int MaxRestarts = 5;
 
     public PluginSupervisor(ILogger<PluginSupervisor> log, ILoggerFactory lf, PluginManager plugins,
-        DeviceBroker broker, PermissionService perms, StorageService storage, AppHub appHub, string hostExe)
+        DeviceBroker broker, PermissionService perms, StorageService storage, AppHub appHub, RemapService remap, string hostExe)
     {
+        _remap = remap;
         _log = log; _lf = lf; _plugins = plugins; _broker = broker;
         _perms = perms; _storage = storage; _appHub = appHub; _hostExe = hostExe;
     }
@@ -69,6 +71,8 @@ public sealed class PluginSupervisor : IDisposable
                 LastError = e?.LastError,
                 UiAssemblyPath = AbsUi(id, m),
                 UiPageTypeName = m?.UiPageType,
+                UiWidgetTypeName = m?.UiWidgetType ?? m?.UiPageType,
+                Widgets = m?.WidgetInfos() ?? [],
             });
         }
         return result;
@@ -118,7 +122,7 @@ public sealed class PluginSupervisor : IDisposable
             using var acceptCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             await server.WaitForConnectionAsync(acceptCts.Token);
 
-            var hostSvc = new HostToAgentService(pluginId, _broker, _perms, _storage, _appHub, _plugins,
+            var hostSvc = new HostToAgentService(pluginId, _broker, _perms, _storage, _appHub, _plugins, _remap,
                 _lf.CreateLogger($"Host:{pluginId}"));
             var (rpc, api) = RpcFactory.CreateWithProxy<IHostApi>(server, hostSvc);
             entry.Rpc = rpc; entry.Api = api;
@@ -288,6 +292,7 @@ public sealed class PluginSupervisor : IDisposable
             Id = id, DisplayName = m?.DisplayName ?? id, Version = m?.Version ?? "?",
             State = e.State, RestartCount = e.RestartCount, LastError = e.LastError,
             UiAssemblyPath = AbsUi(id, m), UiPageTypeName = m?.UiPageType,
+            UiWidgetTypeName = m?.UiWidgetType ?? m?.UiPageType, Widgets = m?.WidgetInfos() ?? [],
         };
     }
 

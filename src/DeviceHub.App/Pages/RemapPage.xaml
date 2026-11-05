@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="DeviceHub.App.Pages.RemapPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Margin="36,24,36,0" RowSpacing="8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Grid>
+            <TextBlock Text="按键映射" Style="{StaticResource TitleTextBlockStyle}"/>
+            <ToggleSwitch x:Name="EnabledToggle" HorizontalAlignment="Right" MinWidth="0"
+                          OnContent="已启用" OffContent="已停用" Toggled="EnabledToggle_Toggled"/>
+        </Grid>
+        <TextBlock Grid.Row="1" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                   Text="把键盘按键、组合键、鼠标侧键 / 中键 / 滚轮倾斜，以及设备上被接管的特殊按键（如罗技手势键）映射成其他按键、快捷键、文本、宏或启动程序。映射由 DeviceHub 后台执行，关闭窗口后仍然生效。"/>
+
+        <InfoBar x:Name="EngineBar" Grid.Row="2" IsOpen="False" IsClosable="False" Severity="Warning" Margin="0,4,0,0"/>
+
+        <Grid Grid.Row="3" Margin="0,4,0,0">
+            <SelectorBar x:Name="Tabs" SelectionChanged="Tabs_SelectionChanged">
+                <SelectorBarItem x:Name="KeysTab" Text="按键" IsSelected="True">
+                    <SelectorBarItem.Icon><FontIcon Glyph="&#xE92E;"/></SelectorBarItem.Icon>
+                </SelectorBarItem>
+                <SelectorBarItem x:Name="ShortcutsTab" Text="快捷键">
+                    <SelectorBarItem.Icon><FontIcon Glyph="&#xE765;"/></SelectorBarItem.Icon>
+                </SelectorBarItem>
+                <SelectorBarItem x:Name="MacrosTab" Text="宏">
+                    <SelectorBarItem.Icon><FontIcon Glyph="&#xE945;"/></SelectorBarItem.Icon>
+                </SelectorBarItem>
+            </SelectorBar>
+            <Button x:Name="AddButton" HorizontalAlignment="Right" VerticalAlignment="Center"
+                    Style="{StaticResource AccentButtonStyle}" Click="Add_Click">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE710;" FontSize="14"/>
+                    <TextBlock x:Name="AddText" Text="添加按键映射"/>
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <ScrollViewer Grid.Row="4" Margin="0,4,0,0">
+            <StackPanel Margin="0,0,0,36" Spacing="4">
+                <TextBlock x:Name="TabHint" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="1,0,0,8"/>
+                <StackPanel x:Name="List" Spacing="4"/>
+                <TextBlock x:Name="Empty" Visibility="Collapsed" Margin="1,12,0,0"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Page>

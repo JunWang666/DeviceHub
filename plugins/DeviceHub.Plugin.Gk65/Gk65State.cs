@@ -33,6 +33,8 @@ public sealed class Gk65DeviceState
     public int Dpi { get; set; } = 800;
     public ProfileSettings[] Profiles { get; set; } = { new(), new(), new() };
     public bool Authorized { get; set; }
+    /// <summary>键盘（接收器）当前在线；离线时页面只读显示上次保存的设置。</summary>
+    public bool Connected { get; set; }
     public string Status { get; set; } = "未接管";
     public string Firmware { get; set; } = "(未知)";
     /// <summary>当前设置从哪来（键盘不支持回读，只能靠记忆）。</summary>

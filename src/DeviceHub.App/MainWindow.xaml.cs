@@ -25,7 +25,7 @@ public sealed partial class MainWindow : Window
         _state.PermissionRequested += OnPermissionRequested;
         _state.DevicesRefreshed += RebuildDeviceMenu;
 
-        ContentFrame.Navigate(typeof(NewDevicePage));
+        ContentFrame.Navigate(typeof(HomePage));
         _ = StartAsync();
     }
 
@@ -48,6 +48,17 @@ public sealed partial class MainWindow : Window
             var agent = _state.Client.Agent!;
             Console.WriteLine($"SELFTEST: 新设备={_state.NewDevices.Count} 正在管理={_state.ManagedDevices.Count}（离线 {_state.ManagedDevices.Count(d => !d.Connected)}） 授权记录={(await agent.ListGrantsAsync()).Count}");
             Console.WriteLine("SELFTEST: 侧边栏图标 " + string.Join(", ", _state.ManagedDevices.Select(d => $"{d.DeviceKey}={(Glyphs.IsValid(d.Glyph) ? ((int)d.Glyph![0]).ToString("X4") : "默认")}")));
+            // 离线的已授权设备：插件应报告"已授权、未连接"，而不是"未授权"。
+            foreach (var d in _state.ManagedDevices.Where(d => !d.Connected && d.OwnerPluginId is not null))
+            {
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(await agent.GetPluginStateAsync(d.OwnerPluginId!, d.DeviceKey));
+                    string F(string n) => doc.RootElement.TryGetProperty(n, out var v) ? v.ToString() : "?";
+                    Console.WriteLine($"SELFTEST: 离线设备 {d.DeviceKey} authorized={F("authorized")} connected={F("connected")}");
+                }
+                catch (Exception ex) { Console.WriteLine($"SELFTEST: 离线设备 {d.DeviceKey} 读状态失败 {ex.Message}"); }
+            }
             var usb = await agent.GetUsbTopologyAsync();
             var usbIssues = new List<(Services.UsbRow, UsbIssue)>();
             var usbRows = Services.UsbTreeBuilder.Build(usb, showEmptyPorts: false, usbIssues);
@@ -59,6 +70,10 @@ public sealed partial class MainWindow : Window
                 Kind = OsdKind.BatteryLow, Glyph = "", Text = "电量低（12%），请及时充电", Percent = 12,
             });
             Console.WriteLine("SELFTEST: 屏幕状态提示窗口已显示");
+            var remap = await agent.GetRemapConfigAsync();
+            ContentFrame.Navigate(typeof(RemapPage));
+            _ = new KeyPicker(CaptureMode.Trigger);
+            Console.WriteLine($"SELFTEST: REMAP page ok rules={remap.Rules.Count} macros={remap.Macros.Count} engineError={(await agent.GetRemapEngineErrorAsync()) ?? "none"}");
             // 每个已安装插件的 XAML 都加载一次（不依赖设备在线；设备标识是假的，后端返回默认状态）。
             foreach (var p in _state.Plugins.Where(p => p.UiAssemblyPath is not null && p.UiPageTypeName is not null))
             {
@@ -67,6 +82,14 @@ public sealed partial class MainWindow : Window
                     var b = new Services.PluginUiBridge(_state.Client, p.Id, "selftest:none");
                     var pg = Services.PluginUiLoader.LoadPage(p.UiAssemblyPath!, p.UiPageTypeName!, b);
                     Console.WriteLine($"SELFTEST: 插件 {p.Id} XAML 加载成功 type={pg.GetType().FullName}");
+                    foreach (var w in p.Widgets)
+                        foreach (var size in w.Sizes)
+                        {
+                            var wb = new Services.PluginUiBridge(_state.Client, p.Id, "selftest:none");
+                            var el = Services.PluginUiLoader.LoadWidget(p.UiAssemblyPath!, p.UiWidgetTypeName!, w.Id, size, wb);
+                            Console.WriteLine($"SELFTEST: 插件 {p.Id} 小组件 {w.Id}/{size} 创建成功 type={el.GetType().Name}");
+                            wb.Dispose();
+                        }
                 }
                 catch (Exception ex) { Console.WriteLine($"SELFTEST: 插件 {p.Id} XAML 加载失败 {ex.Message} ← {ex.GetBaseException().GetType().Name}: {ex.GetBaseException().Message}"); }
             }
@@ -135,14 +158,18 @@ public sealed partial class MainWindow : Window
         DeviceHeader.Visibility = hasDevices ? Visibility.Visible : Visibility.Collapsed;
         _rebuilding = false;
 
-        // 还原选中项；默认选中"新设备"
+        // 还原选中项；默认选中"主页"（页面已在构造时导航过去，这里只同步选中态，不重复导航）
         if (selectedKey != null && selectedKey.StartsWith("dev:"))
         {
             var match = FindItem(selectedKey);
             if (match != null) { Nav.SelectedItem = match; return; }
         }
         if (Nav.SelectedItem == null)
-            Nav.SelectedItem = Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => (string?)i.Tag == "new");
+        {
+            _rebuilding = true;
+            Nav.SelectedItem = Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => (string?)i.Tag == "home");
+            _rebuilding = false;
+        }
     }
 
     private void Nav_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
@@ -150,9 +177,11 @@ public sealed partial class MainWindow : Window
         if (_rebuilding) return;
         var tag = (args.SelectedItem as NavigationViewItem)?.Tag as string;
         if (tag is null) return;
-        if (tag == "new") ContentFrame.Navigate(typeof(NewDevicePage));
+        if (tag == "home") ContentFrame.Navigate(typeof(HomePage));
+        else if (tag == "new") ContentFrame.Navigate(typeof(NewDevicePage));
         else if (tag == "plugins") ContentFrame.Navigate(typeof(PluginsPage));
         else if (tag == "usb") ContentFrame.Navigate(typeof(UsbPage));
+        else if (tag == "tool:remap") ContentFrame.Navigate(typeof(RemapPage));
         else if (tag.StartsWith("dev:"))
         {
             var key = tag[4..];

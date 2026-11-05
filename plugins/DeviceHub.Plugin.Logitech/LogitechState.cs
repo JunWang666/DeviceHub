@@ -71,6 +71,26 @@ public sealed class FeatureEntry
     public int Index { get; set; }
 }
 
+/// <summary>
+/// 设备上的一个可编程按键 / 控件（HID++ 0x1B04 Reprogrammable Controls v4）。
+/// 接管（divert）后按键不再执行原功能，按下 / 抬起由设备以 HID++ 事件报告，本插件转给核心的按键映射。
+/// </summary>
+public sealed class ControlState
+{
+    /// <summary>控件 id（CID），如 0x00C3 = 手势键。</summary>
+    public int Cid { get; set; }
+    /// <summary>默认功能（TID）。</summary>
+    public int Tid { get; set; }
+    public string Name { get; set; } = "";
+    /// <summary>getCidInfo 的标志位（低字节 flags1、高字节 flags2）。</summary>
+    public int Flags { get; set; }
+    public bool IsMouse { get; set; }
+    public bool Divertable { get; set; }
+    public bool Diverted { get; set; }
+    /// <summary>接管后当前是否按着（设备事件实时更新）。</summary>
+    public bool Pressed { get; set; }
+}
+
 /// <summary>接收器上的一个配对设备，或直连设备本身（Index = 0xFF）。</summary>
 public sealed class HidppDeviceState
 {
@@ -97,6 +117,8 @@ public sealed class HidppDeviceState
     public bool? FnSwap { get; set; }
     public HostState? Hosts { get; set; }
     public OnboardState? Onboard { get; set; }
+    /// <summary>可编程按键（0x1B04）；设备不支持时为空。</summary>
+    public List<ControlState> Controls { get; set; } = new();
 
     public List<FeatureEntry> Features { get; set; } = new();
     /// <summary>识别到但本插件尚未实现的功能（灯效、按键重映射…），供 UI 列出。</summary>

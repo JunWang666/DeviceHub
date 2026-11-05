@@ -11,10 +11,11 @@ public sealed class AgentApiService : IAgentApi
     private readonly PermissionService _perms;
     private readonly PluginManager _plugins;
     private readonly ILogger _log;
+    private readonly RemapService _remap;
 
     public AgentApiService(DeviceBroker broker, PluginSupervisor supervisor, PermissionService perms,
-        PluginManager plugins, ILogger log)
-    { _broker = broker; _supervisor = supervisor; _perms = perms; _plugins = plugins; _log = log; }
+        PluginManager plugins, RemapService remap, ILogger log)
+    { _remap = remap; _broker = broker; _supervisor = supervisor; _perms = perms; _plugins = plugins; _log = log; }
 
     public async Task<IReadOnlyList<DeviceInfo>> ListDevicesAsync()
     {
@@ -195,6 +196,12 @@ public sealed class AgentApiService : IAgentApi
     }
 
     public Task<UsbTopology> GetUsbTopologyAsync() => Task.Run(Native.NativeUsb.Scan);
+
+    public Task<RemapConfig> GetRemapConfigAsync() => Task.FromResult(_remap.GetConfig());
+    public Task SaveRemapConfigAsync(RemapConfig config) { _remap.SaveConfig(config); return Task.CompletedTask; }
+    public Task StartInputCaptureAsync(CaptureMode mode) { _remap.StartCapture(mode); return Task.CompletedTask; }
+    public Task StopInputCaptureAsync() { _remap.StopCapture(); return Task.CompletedTask; }
+    public Task<string?> GetRemapEngineErrorAsync() => Task.FromResult(_remap.Error);
 
     private static string? PeekId(string packagePath)
     {

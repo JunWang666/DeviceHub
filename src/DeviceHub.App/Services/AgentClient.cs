@@ -45,6 +45,8 @@ public sealed class AgentClient : IAppCallback, IDisposable
         => PluginStatePushed?.Invoke(pluginId, deviceKey, stateJson);
     public void OnUsbChanged() => UsbChanged?.Invoke();
     public void OnOsd(OsdMessage message) => Osd?.Invoke(message);
+    public void OnInputCaptured(InputCaptureEvent e) => InputCaptured?.Invoke(e);
+    public event Action<InputCaptureEvent>? InputCaptured;
 
     public void Dispose() => _rpc?.Dispose();
 }

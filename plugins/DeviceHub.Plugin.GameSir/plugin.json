@@ -1,12 +1,16 @@
 {
   "id": "com.devicehub.gamesir",
   "displayName": "GameSir 手柄",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "sdkVersion": "1.0",
   "backendAssembly": "backend/DeviceHub.Plugin.GameSir.dll",
   "backendType": "DeviceHub.Plugin.GameSir.GameSirPlugin",
   "uiAssembly": "ui/DeviceHub.Plugin.GameSir.Ui.dll",
   "uiPageType": "DeviceHub.Plugin.GameSir.Ui.GameSirPageEntry",
+  "uiWidgetType": "DeviceHub.Plugin.GameSir.Ui.GameSirWidgets",
+  "widgets": [
+    { "id": "battery", "title": "电量", "description": "手柄电量", "glyph": "", "sizes": ["small", "wide"], "defaultSize": "small" }
+  ],
   "devices": [
     {
       "name": "GameSir Nova 2 Lite",

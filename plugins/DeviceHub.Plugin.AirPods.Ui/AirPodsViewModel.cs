@@ -95,13 +95,23 @@ public sealed class AirPodsViewModel : INotifyPropertyChanged
     public bool AncVisible => State.SupportsAnc;
     public bool AncEnabled => State.Authorized && State.AapConnected;
     public bool AdaptiveEnabled => AncEnabled && State.SupportsAdaptive;
-    public bool ShowDriverNote => State.SupportsAnc && !State.AapConnected;
+    /// <summary>
+    /// 没连上 AAP 就提示，不论型号是否带降噪：1% 精度电量对所有型号都要走 AAP，
+    /// 而且广播还没给出型号时（Unknown）SupportsAnc 恒为 false，按降噪门控会把提示整个藏掉。
+    /// </summary>
+    public bool ShowDriverNote => State.Authorized && State.Connected && !State.AapConnected;
+    public bool ShowAdvancedHeader => AncVisible || ShowDriverNote;
+    public string AdvancedHeader => AncVisible ? "噪声控制" : "高级功能";
+    private string AapFeatures => State.SupportsAnc
+        ? State.SupportsConversationAwareness ? "降噪模式、对话感知和 1% 精度电量" : "降噪模式和 1% 精度电量"
+        : "1% 精度电量与固件版本";
     public string DriverNote => State.AapNote switch
     {
-        "未安装 AAP 驱动" => "降噪模式、对话感知和 1% 精度电量要经 AirPods 的 AAP 控制通道（L2CAP），Windows 不对普通程序开放，需要另装第三方驱动（NTPods 或 PodBridge 的 AAP 驱动）。这两个驱动都只有测试签名，要先开启 Windows 测试模式，有安全风险，请阅读其说明后自行决定。电量与佩戴状态不受影响。",
+        "未安装 AAP 驱动" => $"{AapFeatures}要经 AirPods 的 AAP 控制通道（L2CAP），Windows 不对普通程序开放，需要另装第三方驱动（NTPods 或 PodBridge 的 AAP 驱动）。这两个驱动都只有测试签名，要先开启 Windows 测试模式，有安全风险，请阅读其说明后自行决定。电量（10% 精度）与佩戴状态不受影响。",
         { Length: > 0 } n => n,
         _ => "正在连接 AAP 控制通道…",
     };
+    public string DriverNoteTitle => State.AapNote == "未安装 AAP 驱动" ? "需要 AAP 驱动" : "高级功能暂不可用";
     public string AncDescription => AncEnabled ? "切换后立即生效，以耳机回显为准" : "需要 AAP 驱动";
 
     public bool ModeOff => State.ListeningMode == 1;

@@ -3,7 +3,7 @@
 ; resolved at runtime, so nothing is written into the install directory.
 
 #ifndef AppVersion
-  #define AppVersion "0.2.1"
+  #define AppVersion "0.4.0"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\dist\app"

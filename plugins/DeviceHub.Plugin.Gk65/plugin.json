@@ -1,12 +1,16 @@
 {
   "id": "com.devicehub.gk65",
   "displayName": "GK65 驱动",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "sdkVersion": "1.0",
   "backendAssembly": "backend/DeviceHub.Plugin.Gk65.dll",
   "backendType": "DeviceHub.Plugin.Gk65.Gk65Plugin",
   "uiAssembly": "ui/DeviceHub.Plugin.Gk65.Ui.dll",
   "uiPageType": "DeviceHub.Plugin.Gk65.Ui.Gk65PageEntry",
+  "uiWidgetType": "DeviceHub.Plugin.Gk65.Ui.Gk65Widgets",
+  "widgets": [
+    { "id": "lighting", "title": "灯效", "description": "切换面板灯效和亮度", "glyph": "", "sizes": ["wide"], "defaultSize": "wide" }
+  ],
   "devices": [
     {
       "name": "GK65 三模键盘",

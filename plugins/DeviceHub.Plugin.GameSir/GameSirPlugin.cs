@@ -75,9 +75,20 @@ public sealed class GameSirPlugin : IDevicePlugin
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 没被 Attach 过的设备（已授权但离线，侧边栏里的离线项）第一次被问到时向核心查授权，
+    /// 免得默认状态把"未连接"显示成"未授权"。
+    /// </summary>
+    private async Task<GameSirState> StateAsync(string deviceKey)
+    {
+        if (_states.TryGetValue(deviceKey, out var st)) return st;
+        var fresh = new GameSirState { Authorized = await _ctx.Device.GetAccessAsync(deviceKey) != AccessScope.Denied };
+        return _states.GetOrAdd(deviceKey, fresh);
+    }
+
     public async Task<string> InvokeAsync(string deviceKey, string method, string argsJson, CancellationToken ct)
     {
-        var st = _states.GetOrAdd(deviceKey, _ => new GameSirState());
+        var st = await StateAsync(deviceKey);
         var a = string.IsNullOrWhiteSpace(argsJson) ? default : JsonDocument.Parse(argsJson).RootElement;
 
         switch (method)
@@ -107,8 +118,7 @@ public sealed class GameSirPlugin : IDevicePlugin
         return Json(st);
     }
 
-    public Task<string> GetStateAsync(string deviceKey)
-        => Task.FromResult(Json(_states.GetOrAdd(deviceKey, _ => new GameSirState())));
+    public async Task<string> GetStateAsync(string deviceKey) => Json(await StateAsync(deviceKey));
 
     public Task PrepareShutdownAsync()
     {

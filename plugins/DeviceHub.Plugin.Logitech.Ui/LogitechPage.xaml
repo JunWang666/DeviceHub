@@ -34,15 +34,18 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <SelectorBar x:Name="Sections" Visibility="{x:Bind Vm.IsPointer, Mode=OneWay}" SelectionChanged="Sections_SelectionChanged">
+            <SelectorBar x:Name="Sections" Visibility="{x:Bind Vm.ShowTabs, Mode=OneWay}" SelectionChanged="Sections_SelectionChanged">
                 <SelectorBarItem x:Name="SettingsTab" Text="设置" IsSelected="True">
                     <SelectorBarItem.Icon><FontIcon Glyph="&#xE713;"/></SelectorBarItem.Icon>
                 </SelectorBarItem>
-                <SelectorBarItem x:Name="TestTab" Text="按键测试">
+                <SelectorBarItem x:Name="ButtonsTab" Text="按键" Visibility="{x:Bind Vm.HasControls, Mode=OneWay}">
+                    <SelectorBarItem.Icon><FontIcon Glyph="&#xE765;"/></SelectorBarItem.Icon>
+                </SelectorBarItem>
+                <SelectorBarItem x:Name="TestTab" Text="按键测试" Visibility="{x:Bind Vm.IsPointer, Mode=OneWay}">
                     <SelectorBarItem.Icon><FontIcon Glyph="&#xE962;"/></SelectorBarItem.Icon>
                 </SelectorBarItem>
             </SelectorBar>
-            <TextBlock Visibility="{x:Bind Vm.IsNotPointer, Mode=OneWay}" Text="{x:Bind Vm.SummaryText, Mode=OneWay}" VerticalAlignment="Center"
+            <TextBlock Visibility="{x:Bind Vm.HideTabs, Mode=OneWay}" Text="{x:Bind Vm.SummaryText, Mode=OneWay}" VerticalAlignment="Center"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="1,0,0,0"/>
             <Button Grid.Column="1" VerticalAlignment="Center" Click="Refresh_Click" ToolTipService.ToolTip="重新读取设备信息与设置">
                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -56,7 +59,7 @@
         <StackPanel Spacing="{StaticResource CardSpacing}" Margin="0,0,0,36">
             <InfoBar IsOpen="{x:Bind Vm.ShowUnauthorized, Mode=OneWay}" Severity="Warning" IsClosable="False"
                      Title="未授权" Message="插件尚未获得此设备的访问授权。" Margin="0,0,0,8"/>
-            <TextBlock Visibility="{x:Bind Vm.IsPointer, Mode=OneWay}" Text="{x:Bind Vm.SummaryText, Mode=OneWay}"
+            <TextBlock Visibility="{x:Bind Vm.ShowTabs, Mode=OneWay}" Text="{x:Bind Vm.SummaryText, Mode=OneWay}"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="1,0,0,4"/>
 
             <!-- 接收器：配对表。每个配对设备在左侧导航里是接收器下的独立设备，设置在那里改 -->
@@ -207,10 +210,15 @@
         </StackPanel>
     </ScrollViewer>
 
+    <!-- 可编程按键（HID++ 0x1B04）：接管开关 + 按下指示。面板在代码里放进来 -->
+    <ScrollViewer x:Name="ButtonsScroll" Grid.Row="1" Visibility="Collapsed">
+        <Border x:Name="ButtonsHost" Margin="0,0,0,36"/>
+    </ScrollViewer>
+
     <!-- 按键测试（鼠标 / 轨迹球）。面板在代码里放进来：App 运行时解析插件 XAML 时认不出插件自己定义的控件类型 -->
     <ScrollViewer x:Name="TestPanel" Grid.Row="1" Visibility="Collapsed">
         <StackPanel Spacing="12" Margin="0,0,0,36">
-            <TextBlock Text="在下面的区域里点击、滚动、移动鼠标，检查每个按键和滚轮是否正常。系统不区分是哪只鼠标，接着几只时都会响应。"
+            <TextBlock Text="在下面的区域里点击、滚动、移动鼠标，检查每个按键和滚轮是否正常。系统不区分是哪只鼠标，接着几只时都会响应。手势键等系统收不到的按键请在「按键」分页里接管后查看。"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="1,0,0,0"/>
             <Border x:Name="MouseTestHost" Style="{StaticResource TileStyle}"/>
         </StackPanel>

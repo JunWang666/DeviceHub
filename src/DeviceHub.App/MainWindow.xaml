@@ -35,6 +35,9 @@
                              OpenPaneLength="260"
                              SelectionChanged="Nav_SelectionChanged">
             <muxc:NavigationView.MenuItems>
+                <muxc:NavigationViewItem Content="主页" Tag="home">
+                    <muxc:NavigationViewItem.Icon><FontIcon Glyph="&#xE80F;"/></muxc:NavigationViewItem.Icon>
+                </muxc:NavigationViewItem>
                 <muxc:NavigationViewItem Content="新设备" Tag="new">
                     <muxc:NavigationViewItem.Icon><FontIcon Glyph="&#xE710;"/></muxc:NavigationViewItem.Icon>
                 </muxc:NavigationViewItem>
@@ -43,6 +46,11 @@
                 </muxc:NavigationViewItem>
                 <muxc:NavigationViewItem Content="USB" Tag="usb">
                     <muxc:NavigationViewItem.Icon><FontIcon Glyph="&#xE88E;"/></muxc:NavigationViewItem.Icon>
+                </muxc:NavigationViewItem>
+                <muxc:NavigationViewItemSeparator/>
+                <muxc:NavigationViewItemHeader Content="工具"/>
+                <muxc:NavigationViewItem Content="按键映射" Tag="tool:remap">
+                    <muxc:NavigationViewItem.Icon><FontIcon Glyph="&#xE765;"/></muxc:NavigationViewItem.Icon>
                 </muxc:NavigationViewItem>
                 <muxc:NavigationViewItemSeparator x:Name="DeviceSeparator" Visibility="Collapsed"/>
                 <muxc:NavigationViewItemHeader x:Name="DeviceHeader" Content="设备" Visibility="Collapsed"/>

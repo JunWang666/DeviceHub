@@ -33,6 +33,7 @@ public sealed class Gk65Plugin : IDevicePlugin
 
         var scope = await _ctx.Device.RequestAccessAsync(device.DeviceKey, "设置灯效、按键、宏");
         st.Authorized = scope != AccessScope.Denied;
+        st.Connected = true;
         st.Status = st.Authorized ? "" : "用户拒绝授权";
 
         // 接管时不主动下发，只在用户改设置时写入。
@@ -70,13 +71,28 @@ public sealed class Gk65Plugin : IDevicePlugin
 
     public Task DetachAsync(string deviceKey)
     {
-        if (_states.TryGetValue(deviceKey, out var s)) { s.Status = "设备已移除"; s.Authorized = false; }
+        // 拔掉接收器只是离线，授权仍在；页面显示"未连接"而不是"未授权"。
+        if (_states.TryGetValue(deviceKey, out var s)) { s.Status = "设备已移除"; s.Connected = false; }
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// 没被 Attach 过的设备（已授权但离线，侧边栏里的离线项）第一次被问到时：
+    /// 读上次保存的设置，并向核心查授权，免得把"未连接"显示成"未授权"。
+    /// </summary>
+    private async Task<Gk65DeviceState> StateAsync(string deviceKey)
+    {
+        if (_states.TryGetValue(deviceKey, out var st)) return st;
+        var fresh = await _ctx.Storage.GetAsync<Gk65DeviceState>("gk65:" + deviceKey) ?? new Gk65DeviceState { Source = StateSource.Default };
+        fresh.Authorized = await _ctx.Device.GetAccessAsync(deviceKey) != AccessScope.Denied;
+        fresh.Connected = false;
+        fresh.Status = "";
+        return _states.GetOrAdd(deviceKey, fresh);
     }
 
     public async Task<string> InvokeAsync(string deviceKey, string method, string argsJson, CancellationToken ct)
     {
-        var st = _states.GetOrAdd(deviceKey, _ => new Gk65DeviceState());
+        var st = await StateAsync(deviceKey);
         var a = string.IsNullOrWhiteSpace(argsJson) ? default : JsonDocument.Parse(argsJson).RootElement;
 
         switch (method)
@@ -114,7 +130,7 @@ public sealed class Gk65Plugin : IDevicePlugin
             // 是电脑端的按键转换，不属于设备能力。
 
             case "RestoreFactory":
-                _states[deviceKey] = st = new Gk65DeviceState { Authorized = true, Status = "已恢复出厂" };
+                _states[deviceKey] = st = new Gk65DeviceState { Authorized = st.Authorized, Connected = st.Connected, Status = "已恢复出厂" };
                 await Send(deviceKey, st, Gk65Protocol.RestoreFactory());
                 break;
         }
@@ -124,8 +140,7 @@ public sealed class Gk65Plugin : IDevicePlugin
         return Json(st);
     }
 
-    public Task<string> GetStateAsync(string deviceKey)
-        => Task.FromResult(Json(_states.GetOrAdd(deviceKey, _ => new Gk65DeviceState())));
+    public async Task<string> GetStateAsync(string deviceKey) => Json(await StateAsync(deviceKey));
 
     public async Task PrepareShutdownAsync()
     {
@@ -151,9 +166,11 @@ public sealed class Gk65Plugin : IDevicePlugin
             DeviceIoStatus.Ok => "已同步到键盘",
             DeviceIoStatus.AccessRevoked => "授权已被撤销",
             DeviceIoStatus.AccessDenied => "未授权",
+            DeviceIoStatus.DeviceGone => "键盘未连接",
             _ => $"写入失败：{res.Status}",
         };
-        if (res.Status == DeviceIoStatus.Ok) st.LastSyncedAt = DateTimeOffset.Now;
+        if (res.Status == DeviceIoStatus.Ok) { st.LastSyncedAt = DateTimeOffset.Now; st.Connected = true; }
+        if (res.Status == DeviceIoStatus.DeviceGone) st.Connected = false;
         if (res.Status is DeviceIoStatus.AccessRevoked or DeviceIoStatus.AccessDenied) st.Authorized = false;
         await Push(deviceKey, st);
     }

@@ -79,9 +79,9 @@
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="1,6,0,0"/>
 
             <!-- 降噪（需要 AAP 驱动） -->
-            <TextBlock Text="噪声控制" Style="{StaticResource GroupHeaderStyle}" Visibility="{x:Bind Vm.AncVisible, Mode=OneWay}"/>
+            <TextBlock Text="{x:Bind Vm.AdvancedHeader, Mode=OneWay}" Style="{StaticResource GroupHeaderStyle}" Visibility="{x:Bind Vm.ShowAdvancedHeader, Mode=OneWay}"/>
             <InfoBar IsOpen="{x:Bind Vm.ShowDriverNote, Mode=OneWay}" Severity="Informational" IsClosable="False"
-                     Title="高级功能不可用" Message="{x:Bind Vm.DriverNote, Mode=OneWay}" Margin="0,0,0,4"/>
+                     Title="{x:Bind Vm.DriverNoteTitle, Mode=OneWay}" Message="{x:Bind Vm.DriverNote, Mode=OneWay}" Margin="0,0,0,4"/>
             <tk:SettingsCard Header="聆听模式" Description="{x:Bind Vm.AncDescription, Mode=OneWay}" Visibility="{x:Bind Vm.AncVisible, Mode=OneWay}">
                 <tk:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE995;"/></tk:SettingsCard.HeaderIcon>
                 <StackPanel Orientation="Horizontal" Spacing="4">

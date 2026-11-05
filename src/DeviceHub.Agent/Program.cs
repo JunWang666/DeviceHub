@@ -23,6 +23,14 @@ public static class Program
             return;
         }
 
+        // 调试：按键映射引擎自检（临时配置 + 注入 F13–F24），不启动 Agent、可与正在运行的 Agent 并存
+        if (args.Contains("--remap-selftest"))
+        {
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            using var tlf = LoggerFactory.Create(b => b.AddSimpleConsole(o => o.SingleLine = true).SetMinimumLevel(LogLevel.Warning));
+            Environment.Exit(await RemapSelfTest.RunAsync(tlf));
+        }
+
         var dataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DeviceHub");
         Directory.CreateDirectory(dataDir);
 
@@ -43,14 +51,15 @@ public static class Program
         var broker = new DeviceBroker(lf.CreateLogger<DeviceBroker>(), perms, plugins, bluetooth);
         var storage = new StorageService(dataDir);
         var appHub = new AppHub(lf.CreateLogger<AppHub>());
+        using var remap = new RemapService(lf.CreateLogger("Remap"), dataDir, appHub);
 
         perms.RequestRaised += appHub.PermissionRequested;
 
         var hostExe = ResolveHostExe(log);
         log.LogInformation("PluginHost 可执行文件：{Exe}", hostExe ?? "(未找到)");
 
-        var supervisor = new PluginSupervisor(lf.CreateLogger<PluginSupervisor>(), lf, plugins, broker, perms, storage, appHub, hostExe ?? "DeviceHub.PluginHost.exe");
-        var agentApi = new AgentApiService(broker, supervisor, perms, plugins, lf.CreateLogger("AgentApi"));
+        var supervisor = new PluginSupervisor(lf.CreateLogger<PluginSupervisor>(), lf, plugins, broker, perms, storage, appHub, remap, hostExe ?? "DeviceHub.PluginHost.exe");
+        var agentApi = new AgentApiService(broker, supervisor, perms, plugins, remap, lf.CreateLogger("AgentApi"));
 
         using var shutdown = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; shutdown.Cancel(); };
@@ -82,7 +91,7 @@ public static class Program
             _ = supervisor.StartAsync(id);
 
         // —— App 连接的管道服务器 ——
-        var pipeTask = AcceptAppConnectionsAsync(appHub, agentApi, lf, log, shutdown.Token);
+        var pipeTask = AcceptAppConnectionsAsync(appHub, agentApi, remap, lf, log, shutdown.Token);
 
         log.LogInformation("Agent 就绪。Ctrl+C 退出。");
         try { await Task.Delay(Timeout.Infinite, shutdown.Token); } catch (OperationCanceledException) { }
@@ -93,7 +102,7 @@ public static class Program
         bluetooth.Dispose();
     }
 
-    private static async Task AcceptAppConnectionsAsync(AppHub appHub, AgentApiService agentApi,
+    private static async Task AcceptAppConnectionsAsync(AppHub appHub, AgentApiService agentApi, RemapService remap,
         ILoggerFactory lf, ILogger log, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
@@ -106,7 +115,7 @@ public static class Program
                 log.LogInformation("UI 已连接");
                 var (rpc, callback) = RpcFactory.CreateWithProxy<IAppCallback>(server, agentApi);
                 appHub.SetCallback(callback);
-                rpc.Disconnected += (_, _) => { appHub.ClearCallback(callback); log.LogInformation("UI 已断开"); try { server.Dispose(); } catch { } };
+                rpc.Disconnected += (_, _) => { appHub.ClearCallback(callback); remap.StopCapture(); log.LogInformation("UI 已断开"); try { server.Dispose(); } catch { } };
                 rpc.StartListening();
             }
             catch (OperationCanceledException) { server.Dispose(); break; }

@@ -34,6 +34,8 @@
             <StackPanel Spacing="{StaticResource CardSpacing}" Margin="0,0,0,36">
                 <InfoBar IsOpen="{x:Bind Vm.ShowUnauthorized, Mode=OneWay}" Severity="Warning" IsClosable="False"
                          Title="未授权" Message="插件尚未获得此设备的访问授权。" Margin="0,0,0,8"/>
+                <InfoBar IsOpen="{x:Bind Vm.ShowOffline, Mode=OneWay}" Severity="Informational" IsClosable="False"
+                         Title="未连接" Message="键盘接收器未插入。下面是上次保存的设置，连接后才能修改。" Margin="0,0,0,8"/>
                 <InfoBar IsOpen="True" Severity="Informational" IsClosable="True"
                          Message="{x:Bind Vm.SourceNote, Mode=OneWay}" Margin="0,0,0,8"/>
 

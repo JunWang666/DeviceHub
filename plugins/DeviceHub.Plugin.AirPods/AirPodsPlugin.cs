@@ -243,8 +243,13 @@ public sealed class AirPodsPlugin : IDevicePlugin
         return Json(s);
     }
 
-    public Task<string> GetStateAsync(string deviceKey) =>
-        Task.FromResult(_sessions.TryGetValue(deviceKey, out var s) ? Json(s) : JsonSerializer.Serialize(new AirPodsState(), J));
+    public async Task<string> GetStateAsync(string deviceKey)
+    {
+        if (_sessions.TryGetValue(deviceKey, out var s)) return Json(s);
+        // 没被 Attach 过 = 当前不在线（侧边栏离线项）。授权照实查，别把"未连接"显示成"未授权"。
+        var offline = new AirPodsState { Authorized = await _ctx.Device.GetAccessAsync(deviceKey) != AccessScope.Denied };
+        return JsonSerializer.Serialize(offline, J);
+    }
 
     public Task<DeviceDescription?> DescribeAsync(string deviceKey)
     {
