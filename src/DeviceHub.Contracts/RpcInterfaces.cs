@@ -22,6 +22,9 @@ public interface IAgentApi
     /// <summary>授权指定插件管理此设备（Always 授权 + 启动并接管），之后设备进入"正在管理"。</summary>
     Task AuthorizeAndUseAsync(string pluginId, string deviceKey);
 
+    /// <summary>给已授权的设备起名字（存在授权记录里）；name 为空表示恢复默认名。</summary>
+    Task RenameDeviceAsync(string pluginId, string deviceKey, string? name);
+
     /// <summary>撤销某插件对某设备的授权。</summary>
     Task RevokeGrantAsync(string pluginId, string deviceKey);
 
@@ -41,8 +44,14 @@ public interface IAgentApi
     /// <summary>触发 UI 重启（Agent 不重启）：先应用待定的插件更新并重启其后端。</summary>
     Task RequestUiRestartAsync();
 
-    /// <summary>安装插件包（.dhplugin），返回插件 Id。插件 UI 在重启界面后生效。</summary>
-    Task<string> InstallPluginPackageAsync(string packagePath);
+    /// <summary>安装插件包（.dhplugin）并立即切换到该版本、重启插件后端；原版本留作回滚。插件界面在重启 DeviceHub 界面后换成新版。</summary>
+    Task<PluginInstallResult> InstallPluginPackageAsync(string packagePath);
+
+    /// <summary>回到插件的上一个版本并重启后端，返回切换后的版本；没有上一个版本时返回 null。</summary>
+    Task<string?> RollbackPluginAsync(string pluginId);
+
+    /// <summary>扫描 USB 拓扑（主控制器 → 集线器 → 端口 → 设备）及诊断结论。只读，不需要设备授权。</summary>
+    Task<UsbTopology> GetUsbTopologyAsync();
 }
 
 /// <summary>
@@ -55,6 +64,10 @@ public interface IAppCallback
     void OnPluginStateChanged(PluginInfo plugin);
     /// <summary>插件后端推送的状态变更（Host → Agent → App → 插件 UI）。</summary>
     void OnPluginStatePushed(string pluginId, string deviceKey, string stateJson);
+    /// <summary>插件请求的屏幕状态提示（核心已校验设备归属并填好设备名）。</summary>
+    void OnOsd(OsdMessage message);
+    /// <summary>有 USB 设备或集线器插拔（已合并连续事件），UI 可重新扫描拓扑。</summary>
+    void OnUsbChanged();
 }
 
 /// <summary>
@@ -99,4 +112,16 @@ public interface IHostToAgentApi
 
     // —— 通知（托盘/Toast）——
     Task NotifyAsync(string pluginId, string title, string message);
+    /// <summary>屏幕状态提示；deviceKey 必须是该插件正在管理的设备（或其子设备）。</summary>
+    Task ShowOsdAsync(string pluginId, string deviceKey, OsdContent content);
+
+    // —— 子设备 ——
+    /// <summary>
+    /// 发布 parentKey 下的全部子设备（整体替换，传空列表即清除）。插件必须已获得父设备的 Always 授权；
+    /// 子设备随父设备授权，键为 <see cref="DeviceKeys.Child"/>。
+    /// </summary>
+    Task PublishChildrenAsync(string pluginId, string parentKey, IReadOnlyList<ChildDevice> children);
+
+    /// <summary>子设备已不存在：撤销其授权并从设备列表移除。插件必须已获得父设备的 Always 授权。</summary>
+    Task ForgetChildAsync(string pluginId, string parentKey, string childId);
 }

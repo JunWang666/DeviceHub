@@ -47,6 +47,7 @@ public sealed class Gk65Plugin : IDevicePlugin
         var mode = Gk65Names.LedMode(p.Mode);
         return Task.FromResult<DeviceDescription?>(new DeviceDescription
         {
+            Glyph = "", // 键盘
             Subtitle = $"2.4G 接收器 · {mode}",
             Details = new DeviceDetailItem[]
             {

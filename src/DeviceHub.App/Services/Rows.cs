@@ -63,10 +63,8 @@ public sealed class NewDeviceRow
 public sealed class GrantRow
 {
     public required GrantInfo Grant { get; init; }
-    public string Title => Grant.DeviceConnected && !string.IsNullOrEmpty(Grant.DeviceDisplayName)
-        ? Grant.DeviceDisplayName
-        : "设备未连接";
-    public string Description => Fmt.Managed(null, Grant.PluginDisplayName, Grant.GrantedAt);
+    public string Title => string.IsNullOrEmpty(Grant.DeviceDisplayName) ? "未知设备" : Grant.DeviceDisplayName;
+    public string Description => Fmt.Managed(Grant.DeviceConnected ? null : "未连接", Grant.PluginDisplayName, Grant.GrantedAt);
 }
 
 /// <summary>"插件"列表项。</summary>
@@ -78,12 +76,14 @@ public sealed class PluginRow
     {
         get
         {
-            var s = $"版本 {Plugin.Version} · {Fmt.State(Plugin.State)} · 内存 {Fmt.Size(Plugin.WorkingSetBytes)}";
+            var s = $"版本 {Plugin.Version}" + (Plugin.PreviousVersion is { } prev ? $"（上一版本 {prev}）" : "") + $" · {Fmt.State(Plugin.State)} · 内存 {Fmt.Size(Plugin.MemoryBytes)}";
             if (Plugin.RestartCount > 0) s += $" · 已重启 {Plugin.RestartCount} 次";
             if (!string.IsNullOrEmpty(Plugin.LastError)) s += $"\n最近错误：{Plugin.LastError}";
             return s;
         }
     }
+    public bool CanRollback => Plugin.PreviousVersion is not null;
+    public string RollbackText => $"回滚到 {Plugin.PreviousVersion}";
     public bool CanStart => Plugin.State is PluginRunState.Stopped or PluginRunState.Crashed;
     public bool CanStop => Plugin.State is PluginRunState.Running or PluginRunState.Starting;
 }

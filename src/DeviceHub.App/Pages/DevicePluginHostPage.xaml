@@ -17,12 +17,20 @@
                 <TextBlock x:Name="TitleText" Style="{StaticResource TitleTextBlockStyle}"/>
                 <TextBlock x:Name="SubtitleText" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
             </StackPanel>
-            <Button Grid.Column="1" VerticalAlignment="Top" Click="Details_Click" ToolTipService.ToolTip="设备详情">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <FontIcon Glyph="&#xE946;" FontSize="14"/>
-                    <TextBlock Text="设备详情"/>
-                </StackPanel>
-            </Button>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
+                <Button Click="Rename_Click" ToolTipService.ToolTip="重命名设备">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE8AC;" FontSize="14"/>
+                        <TextBlock Text="重命名"/>
+                    </StackPanel>
+                </Button>
+                <Button Click="Details_Click" ToolTipService.ToolTip="设备详情">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon Glyph="&#xE946;" FontSize="14"/>
+                        <TextBlock Text="设备详情"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
         </Grid>
         <ContentControl Grid.Row="1" x:Name="PluginHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"/>
     </Grid>

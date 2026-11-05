@@ -1,0 +1,22 @@
+{
+  "id": "com.devicehub.gamesir",
+  "displayName": "GameSir 手柄",
+  "version": "1.0.1",
+  "sdkVersion": "1.0",
+  "backendAssembly": "backend/DeviceHub.Plugin.GameSir.dll",
+  "backendType": "DeviceHub.Plugin.GameSir.GameSirPlugin",
+  "uiAssembly": "ui/DeviceHub.Plugin.GameSir.Ui.dll",
+  "uiPageType": "DeviceHub.Plugin.GameSir.Ui.GameSirPageEntry",
+  "devices": [
+    {
+      "name": "GameSir Nova 2 Lite",
+      "bus": "Hid",
+      "vid": "0x3537",
+      "pid": ["0x1098", "0x100f"],
+      "channels": [
+        { "role": "config", "interface": 2, "usagePage": "0xff7a", "usage": "0x01" }
+      ]
+    }
+  ],
+  "permissions": ["devices"]
+}

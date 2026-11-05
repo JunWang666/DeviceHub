@@ -55,16 +55,17 @@ public sealed class PluginSupervisor : IDisposable
         {
             var m = _plugins.ActiveManifest(id);
             _hosts.TryGetValue(id, out var e);
-            long ws = 0;
-            try { if (e?.Process is { HasExited: false } p) { p.Refresh(); ws = p.WorkingSet64; } } catch { }
+            long mem = 0;
+            try { if (e?.Process is { HasExited: false } p) { p.Refresh(); mem = p.PrivateMemorySize64; } } catch { }
             result.Add(new PluginInfo
             {
                 Id = id,
                 DisplayName = m?.DisplayName ?? id,
                 Version = m?.Version ?? "?",
+                PreviousVersion = _plugins.LoadState(id).Previous is { Length: > 0 } prev && Directory.Exists(Path.Combine(_plugins.Root, id, prev)) ? prev : null,
                 State = e?.State ?? (_plugins.LoadState(id).Disabled ? PluginRunState.Disabled : PluginRunState.Stopped),
                 RestartCount = e?.RestartCount ?? 0,
-                WorkingSetBytes = ws,
+                MemoryBytes = mem,
                 LastError = e?.LastError,
                 UiAssemblyPath = AbsUi(id, m),
                 UiPageTypeName = m?.UiPageType,
@@ -96,6 +97,10 @@ public sealed class PluginSupervisor : IDisposable
                 UseShellExecute = false,
                 WorkingDirectory = versionDir,
             };
+            // 插件进程分配的几乎都是短命的小对象（RPC 报文、状态 JSON）。GC 默认按 CPU 三级缓存大小定第 0 代预算，
+            // 大缓存的机器上一个插件会多占十几 MB 才回收一次；限到 4MB，代价只是更频繁但很便宜的第 0 代回收。
+            // 这个设置只认环境变量（runtimeconfig 里写无效）。
+            psi.Environment["DOTNET_GCgen0size"] = "0x400000";
             psi.ArgumentList.Add("--pipe"); psi.ArgumentList.Add(pipeName);
             psi.ArgumentList.Add("--plugin"); psi.ArgumentList.Add(pluginId);
             psi.ArgumentList.Add("--dir"); psi.ArgumentList.Add(versionDir);
@@ -268,6 +273,7 @@ public sealed class PluginSupervisor : IDisposable
 
     private void Kill(HostEntry e)
     {
+        if (_broker.RemoveChildren(e.PluginId)) _appHub.DevicesChanged(_broker.Enumerate());
         try { e.Rpc?.Dispose(); } catch { }
         try { if (e.Process is { HasExited: false } p) p.Kill(true); } catch { }
         try { e.Job?.Dispose(); } catch { }

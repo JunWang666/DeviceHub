@@ -24,6 +24,7 @@ public sealed class DeviceBroker : IDisposable
     private readonly ConcurrentDictionary<string, SafeFileHandle> _openHandles = new(); // "deviceKey|channelId" → handle
     private readonly ConcurrentDictionary<string, NativeHid.HidPath> _channels = new(); // "deviceKey|channelId" → 集合
     private readonly ConcurrentDictionary<string, DeviceInfo> _devices = new();        // deviceKey → 最近一次枚举结果
+    private readonly ConcurrentDictionary<string, (string PluginId, ChildDevice Child)> _children = new(); // 子设备键 → 发布者与内容
 
     public DeviceBroker(ILogger<DeviceBroker> log, PermissionService perms, PluginManager plugins, BluetoothService bt)
     {
@@ -31,22 +32,26 @@ public sealed class DeviceBroker : IDisposable
         _perms = perms;
         _plugins = plugins;
         _bt = bt;
-        _perms.GrantRevoked += (_, deviceKey) => { CloseHandles(deviceKey); _bt.CloseAap(deviceKey); };
+        _perms.GrantRevoked += (_, deviceKey) => { CloseHandles(deviceKey); _bt.CloseAap(deviceKey); RemoveChildren(c => c.Key.StartsWith(deviceKey + DeviceKeys.ChildSeparator, StringComparison.Ordinal)); };
     }
 
     public IReadOnlyList<DeviceInfo> Enumerate()
     {
         var list = new List<DeviceInfo>();
         // 聚合键：优先 ContainerId；没有容器时退回序列号；都没有就是独立设备（按路径）。
+        // 设备 key 要跨重启/换口稳定：有序列号用序列号，否则用 ContainerId。
+        // 序列号相同但 ContainerId 不同的几组会算出同一个 key，合并成一台设备，保证 key 唯一。
         var groups = NativeHid.Enumerate().GroupBy(h =>
-            (h.Vid, h.Pid, Group: h.ContainerId?.ToString("N") ?? (h.Serial is { Length: > 0 } s ? "sn:" + s : "path:" + h.Path)));
-        foreach (var g in groups)
+                (h.Vid, h.Pid, Group: h.ContainerId?.ToString("N") ?? (h.Serial is { Length: > 0 } s ? "sn:" + s : "path:" + h.Path)))
+            .GroupBy(g => g.First() is var f && f.Serial is { Length: > 0 } sn ? $"hid:{f.Vid:x4}:{f.Pid:x4}:{sn}"
+                    : f.ContainerId is { } cid ? $"hid:{f.Vid:x4}:{f.Pid:x4}:{cid:N}"
+                    : $"hid:{f.Vid:x4}:{f.Pid:x4}:{Path.GetFileName(f.Path)}",
+                g => g.AsEnumerable());
+        foreach (var kg in groups)
         {
-            var first = g.First();
-            // 设备 key 要跨重启/换口稳定：有序列号用序列号，否则用 ContainerId。
-            var key = first.Serial is { Length: > 0 } sn ? $"hid:{first.Vid:x4}:{first.Pid:x4}:{sn}"
-                    : first.ContainerId is { } cid ? $"hid:{first.Vid:x4}:{first.Pid:x4}:{cid:N}"
-                    : $"hid:{first.Vid:x4}:{first.Pid:x4}:{Path.GetFileName(first.Path)}";
+            var key = kg.Key;
+            var g = kg.SelectMany(x => x).ToList();
+            var first = g[0];
 
             var channels = new List<HidChannelInfo>();
             foreach (var h in g.OrderBy(h => h.Interface).ThenBy(h => h.UsagePage).ThenBy(h => h.Usage))
@@ -78,13 +83,61 @@ public sealed class DeviceBroker : IDisposable
         }
         foreach (var dev in _bt.Devices())
         {
+            if (list.Any(d => d.DeviceKey == dev.DeviceKey)) continue;
             _devices[dev.DeviceKey] = dev;
             list.Add(dev);
+        }
+        // 子设备跟在父设备后面；父设备不在线时不出现。
+        var parents = new Dictionary<string, DeviceInfo>();
+        foreach (var d in list) parents.TryAdd(d.DeviceKey, d);
+        foreach (var (key, (_, child)) in _children.OrderBy(c => c.Key, StringComparer.Ordinal))
+        {
+            DeviceKeys.TrySplit(key, out var parentKey, out _);
+            if (!parents.TryGetValue(parentKey, out var parent)) continue;
+            list.Add(new DeviceInfo
+            {
+                DeviceKey = key,
+                ParentKey = parentKey,
+                Bus = parent.Bus,
+                Vid = parent.Vid,
+                Pid = parent.Pid,
+                DisplayName = child.Name,
+                Connected = child.Connected,
+            });
         }
         return list;
     }
 
     public DeviceInfo? Find(string deviceKey) => Enumerate().FirstOrDefault(d => d.DeviceKey == deviceKey);
+
+    // —— 子设备：由管理父设备的插件发布，只用于展示与路由，没有自己的通道 ——
+
+    /// <summary>整体替换 parentKey 下由 pluginId 发布的子设备；有变化时返回 true。</summary>
+    public bool SetChildren(string pluginId, string parentKey, IReadOnlyList<ChildDevice> children)
+    {
+        var prefix = parentKey + DeviceKeys.ChildSeparator;
+        var next = children.Where(c => c.Id.Length > 0 && !c.Id.Contains(DeviceKeys.ChildSeparator))
+            .GroupBy(c => c.Id).Select(g => g.First())
+            .ToDictionary(c => prefix + c.Id, c => (pluginId, c));
+        var old = _children.Where(kv => kv.Key.StartsWith(prefix, StringComparison.Ordinal)).ToList();
+        bool changed = old.Count != next.Count
+            || old.Any(kv => !next.TryGetValue(kv.Key, out var n) || n != kv.Value);
+        foreach (var kv in old.Where(kv => !next.ContainsKey(kv.Key))) _children.TryRemove(kv.Key, out _);
+        foreach (var (k, v) in next) _children[k] = v;
+        return changed;
+    }
+
+    /// <summary>插件停止/崩溃时清掉它发布的子设备。</summary>
+    public bool RemoveChildren(string pluginId) => RemoveChildren(c => c.Value.PluginId == pluginId);
+
+    public bool RemoveChild(string childKey) => _children.TryRemove(childKey, out _);
+
+    private bool RemoveChildren(Func<KeyValuePair<string, (string PluginId, ChildDevice Child)>, bool> match)
+    {
+        bool any = false;
+        foreach (var kv in _children.Where(match).ToList()) any |= _children.TryRemove(kv.Key, out _);
+        return any;
+    }
 
     // —— 授权后的 I/O 代理。channel = 插件 manifest 里声明的通道角色，null 为默认（第一个声明的）——
     public Task<DeviceIoResult> GetFeatureAsync(string pluginId, string deviceKey, string? channel, byte reportId, int length)
@@ -122,9 +175,9 @@ public sealed class DeviceBroker : IDisposable
             return GuardedBt(pluginId, deviceKey, channel, (c, spec) => c.Kind == ChannelKinds.Aap
                 ? _bt.ReceiveAapAsync(deviceKey, spec.Psm, timeoutMs)
                 : _bt.ReadAdvertAsync(deviceKey, timeoutMs));
-        return Guarded(pluginId, deviceKey, channel, (h, c) =>
+        return GuardedAsync(pluginId, deviceKey, channel, async (h, c) =>
         {
-            var data = NativeHid.ReadInput(h, c.InputLength, timeoutMs);
+            var data = await NativeHid.ReadInputAsync(h, c.InputLength, timeoutMs);
             return data is null ? DeviceIoResult.Fail(DeviceIoStatus.Timeout) : DeviceIoResult.Success(data);
         });
     }
@@ -155,27 +208,31 @@ public sealed class DeviceBroker : IDisposable
 
     private Task<DeviceIoResult> Guarded(string pluginId, string deviceKey, string? channel,
         Func<SafeFileHandle, NativeHid.HidPath, DeviceIoResult> io)
+        => GuardedAsync(pluginId, deviceKey, channel, (h, c) => Task.FromResult(io(h, c)));
+
+    private async Task<DeviceIoResult> GuardedAsync(string pluginId, string deviceKey, string? channel,
+        Func<SafeFileHandle, NativeHid.HidPath, Task<DeviceIoResult>> io)
     {
         var scope = _perms.GetGrant(pluginId, deviceKey);
         if (scope is AccessScope.Denied)
-            return Task.FromResult(DeviceIoResult.Fail(DeviceIoStatus.AccessDenied, "未授权"));
+            return DeviceIoResult.Fail(DeviceIoStatus.AccessDenied, "未授权");
         try
         {
             if (!_devices.TryGetValue(deviceKey, out var dev)) { Enumerate(); _devices.TryGetValue(deviceKey, out dev); }
-            if (dev is null) return Task.FromResult(DeviceIoResult.Fail(DeviceIoStatus.DeviceGone));
+            if (dev is null) return DeviceIoResult.Fail(DeviceIoStatus.DeviceGone);
             var ch = _plugins.ResolveChannel(pluginId, dev, channel);
             if (ch is null)
-                return Task.FromResult(DeviceIoResult.Fail(DeviceIoStatus.AccessDenied,
-                    channel is null ? "插件未声明任何通道" : $"插件未声明通道 {channel}"));
+                return DeviceIoResult.Fail(DeviceIoStatus.AccessDenied,
+                    channel is null ? "插件未声明任何通道" : $"插件未声明通道 {channel}");
             var h = Open(deviceKey, ch.Id);
             if (h is null || !_channels.TryGetValue(K(deviceKey, ch.Id), out var col))
-                return Task.FromResult(DeviceIoResult.Fail(DeviceIoStatus.DeviceGone));
-            return Task.FromResult(io(h, col));
+                return DeviceIoResult.Fail(DeviceIoStatus.DeviceGone);
+            return await io(h, col);
         }
         catch (Exception ex)
         {
             _log.LogWarning(ex, "设备 I/O 异常 {Device}", deviceKey);
-            return Task.FromResult(DeviceIoResult.Fail(DeviceIoStatus.Error, ex.Message));
+            return DeviceIoResult.Fail(DeviceIoStatus.Error, ex.Message);
         }
     }
 

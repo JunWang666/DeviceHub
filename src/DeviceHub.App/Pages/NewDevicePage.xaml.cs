@@ -21,10 +21,21 @@ public sealed partial class NewDevicePage : Page
 
         if (AppState.Instance.Client.Agent is { } a)
         {
-            var grants = (await a.ListGrantsAsync()).Where(g => g.Scope == AccessScope.Always)
-                .Select(g => new GrantRow { Grant = g }).ToList();
-            GrantList.ItemsSource = grants;
-            NoGrantHint.Visibility = grants.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            try
+            {
+                // 子设备也列出来：已解除配对的子设备只能在这里撤销
+                var grants = (await a.ListGrantsAsync()).Where(g => g.Scope == AccessScope.Always)
+                    .Select(g => new GrantRow { Grant = g }).ToList();
+                GrantList.ItemsSource = grants;
+                NoGrantHint.Text = "还没有授权任何设备。";
+                NoGrantHint.Visibility = grants.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
+            catch (Exception ex)
+            {
+                GrantList.ItemsSource = null;
+                NoGrantHint.Text = "读取授权列表失败：" + ex.Message;
+                NoGrantHint.Visibility = Visibility.Visible;
+            }
         }
     }
 
@@ -76,6 +87,13 @@ public sealed partial class NewDevicePage : Page
 
         // 跳转到左侧新出现的被管理设备
         if (App.MainWindow is MainWindow mw) mw.NavigateToManagedDevice(dev.DeviceKey);
+    }
+
+    private async void Rename_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as Button)?.Tag is GrantInfo g
+            && await RenameDeviceDialog.ShowAsync(XamlRoot, g.PluginId, g.DeviceKey, g.CustomName, g.DefaultName))
+            await ReloadAsync();
     }
 
     private async void Details_Click(object sender, RoutedEventArgs e)

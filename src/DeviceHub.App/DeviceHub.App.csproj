@@ -10,6 +10,7 @@
     <EnableMsixTooling>true</EnableMsixTooling>
     <AssemblyName>DeviceHub.App</AssemblyName>
     <RootNamespace>DeviceHub.App</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- 自定义 Program.Main：启动前拉起 Agent 并同步插件 UI 资源 -->
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
   </PropertyGroup>

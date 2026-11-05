@@ -6,6 +6,18 @@
     <Project Path="plugins/DeviceHub.Plugin.AirPods/DeviceHub.Plugin.AirPods.csproj">
       <Platform Project="x64" />
     </Project>
+    <Project Path="plugins/DeviceHub.Plugin.GameSir.Ui/DeviceHub.Plugin.GameSir.Ui.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="plugins/DeviceHub.Plugin.GameSir/DeviceHub.Plugin.GameSir.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="plugins/DeviceHub.Plugin.Logitech.Ui/DeviceHub.Plugin.Logitech.Ui.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="plugins/DeviceHub.Plugin.Logitech/DeviceHub.Plugin.Logitech.csproj">
+      <Platform Project="x64" />
+    </Project>
     <Project Path="plugins/DeviceHub.Plugin.Gk65.Ui/DeviceHub.Plugin.Gk65.Ui.csproj">
       <Platform Project="x64" />
     </Project>

@@ -46,7 +46,19 @@ public sealed partial class MainWindow : Window
         try
         {
             var agent = _state.Client.Agent!;
-            Console.WriteLine($"SELFTEST: 新设备={_state.NewDevices.Count} 正在管理={_state.ManagedDevices.Count}");
+            Console.WriteLine($"SELFTEST: 新设备={_state.NewDevices.Count} 正在管理={_state.ManagedDevices.Count}（离线 {_state.ManagedDevices.Count(d => !d.Connected)}） 授权记录={(await agent.ListGrantsAsync()).Count}");
+            Console.WriteLine("SELFTEST: 侧边栏图标 " + string.Join(", ", _state.ManagedDevices.Select(d => $"{d.DeviceKey}={(Glyphs.IsValid(d.Glyph) ? ((int)d.Glyph![0]).ToString("X4") : "默认")}")));
+            var usb = await agent.GetUsbTopologyAsync();
+            var usbIssues = new List<(Services.UsbRow, UsbIssue)>();
+            var usbRows = Services.UsbTreeBuilder.Build(usb, showEmptyPorts: false, usbIssues);
+            Console.WriteLine($"SELFTEST: USB 控制器={usb.Controllers.Count} 设备={usbRows.Sum(CountDevices)} 诊断={usbIssues.Count}");
+            ContentFrame.Navigate(typeof(UsbPage));
+            Services.OsdWindow.Show(new OsdMessage
+            {
+                PluginId = "selftest", DeviceKey = "selftest:none", DeviceName = "自检设备",
+                Kind = OsdKind.BatteryLow, Glyph = "", Text = "电量低（12%），请及时充电", Percent = 12,
+            });
+            Console.WriteLine("SELFTEST: 屏幕状态提示窗口已显示");
             // 每个已安装插件的 XAML 都加载一次（不依赖设备在线；设备标识是假的，后端返回默认状态）。
             foreach (var p in _state.Plugins.Where(p => p.UiAssemblyPath is not null && p.UiPageTypeName is not null))
             {
@@ -56,7 +68,7 @@ public sealed partial class MainWindow : Window
                     var pg = Services.PluginUiLoader.LoadPage(p.UiAssemblyPath!, p.UiPageTypeName!, b);
                     Console.WriteLine($"SELFTEST: 插件 {p.Id} XAML 加载成功 type={pg.GetType().FullName}");
                 }
-                catch (Exception ex) { Console.WriteLine($"SELFTEST: 插件 {p.Id} XAML 加载失败 {ex.Message}"); }
+                catch (Exception ex) { Console.WriteLine($"SELFTEST: 插件 {p.Id} XAML 加载失败 {ex.Message} ← {ex.GetBaseException().GetType().Name}: {ex.GetBaseException().Message}"); }
             }
 
             var dev = _state.NewDevices.FirstOrDefault() ?? _state.ManagedDevices.FirstOrDefault();
@@ -74,6 +86,8 @@ public sealed partial class MainWindow : Window
         }
         catch (Exception ex) { Console.WriteLine("SELFTEST: 失败 " + ex); }
     }
+
+    private static int CountDevices(Services.UsbRow r) => (r.Badge.Length > 0 ? 1 : 0) + r.Children.Sum(CountDevices);
 
     /// <summary>按有效像素设定初始窗口大小（随 DPI 缩放），并居中到当前显示器工作区。</summary>
     private void SizeAndCenter(int width, int height)
@@ -105,13 +119,16 @@ public sealed partial class MainWindow : Window
                      .Where(i => (i.Tag as string)?.StartsWith("dev:") == true).ToList())
             Nav.MenuItems.Remove(item);
 
-        foreach (var dev in _state.ManagedDevices)
-            Nav.MenuItems.Add(new NavigationViewItem
-            {
-                Content = dev.DisplayName,
-                Tag = "dev:" + dev.DeviceKey,
-                Icon = new FontIcon { Glyph = "" },
-            });
+        // 子设备（如接收器上配对的鼠标）挂在父设备下面，默认展开；未连接的设备（含离线占位）淡显。
+        var managedKeys = _state.ManagedDevices.Select(d => d.DeviceKey).ToHashSet();
+        foreach (var dev in _state.ManagedDevices.Where(d => d.ParentKey is null || !managedKeys.Contains(d.ParentKey)))
+        {
+            var item = DeviceItem(dev);
+            foreach (var child in _state.ManagedDevices.Where(c => c.ParentKey == dev.DeviceKey))
+                item.MenuItems.Add(DeviceItem(child));
+            item.IsExpanded = item.MenuItems.Count > 0;
+            Nav.MenuItems.Add(item);
+        }
 
         var hasDevices = _state.ManagedDevices.Count > 0;
         DeviceSeparator.Visibility = hasDevices ? Visibility.Visible : Visibility.Collapsed;
@@ -121,7 +138,7 @@ public sealed partial class MainWindow : Window
         // 还原选中项；默认选中"新设备"
         if (selectedKey != null && selectedKey.StartsWith("dev:"))
         {
-            var match = Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => (string?)i.Tag == selectedKey);
+            var match = FindItem(selectedKey);
             if (match != null) { Nav.SelectedItem = match; return; }
         }
         if (Nav.SelectedItem == null)
@@ -135,6 +152,7 @@ public sealed partial class MainWindow : Window
         if (tag is null) return;
         if (tag == "new") ContentFrame.Navigate(typeof(NewDevicePage));
         else if (tag == "plugins") ContentFrame.Navigate(typeof(PluginsPage));
+        else if (tag == "usb") ContentFrame.Navigate(typeof(UsbPage));
         else if (tag.StartsWith("dev:"))
         {
             var key = tag[4..];
@@ -145,9 +163,23 @@ public sealed partial class MainWindow : Window
 
     public void NavigateToManagedDevice(string deviceKey)
     {
-        var item = Nav.MenuItems.OfType<NavigationViewItem>().FirstOrDefault(i => (string?)i.Tag == "dev:" + deviceKey);
+        var item = FindItem("dev:" + deviceKey);
         if (item != null) Nav.SelectedItem = item;
     }
+
+    private static NavigationViewItem DeviceItem(DeviceInfo dev) => new()
+    {
+        Content = dev.DisplayName,
+        Tag = "dev:" + dev.DeviceKey,
+        Icon = new FontIcon { Glyph = Glyphs.IsValid(dev.Glyph) ? dev.Glyph : Glyphs.Device }, // 插件可指定图标（如 AirPods 用耳机）
+        Opacity = dev.Connected ? 1 : 0.55,
+    };
+
+    /// <summary>在菜单（含子设备层级）里按 Tag 找项。</summary>
+    private NavigationViewItem? FindItem(string tag) =>
+        Nav.MenuItems.OfType<NavigationViewItem>()
+            .SelectMany(i => i.MenuItems.OfType<NavigationViewItem>().Prepend(i))
+            .FirstOrDefault(i => (string?)i.Tag == tag);
 
     // 兜底：仍支持插件自发的授权弹窗（新流程下一般不触发）
     private async void OnPermissionRequested(PermissionRequest req)

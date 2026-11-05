@@ -1,0 +1,30 @@
+{
+  "id": "com.devicehub.logitech",
+  "displayName": "罗技设备",
+  "version": "1.2.0",
+  "sdkVersion": "1.0",
+  "backendAssembly": "backend/DeviceHub.Plugin.Logitech.dll",
+  "backendType": "DeviceHub.Plugin.Logitech.LogitechPlugin",
+  "uiAssembly": "ui/DeviceHub.Plugin.Logitech.Ui.dll",
+  "uiPageType": "DeviceHub.Plugin.Logitech.Ui.LogitechPageEntry",
+  "devices": [
+    {
+      "name": "罗技设备（HID++）",
+      "bus": "Hid",
+      "vid": "0x046d",
+      "channels": [
+        { "role": "long", "usagePage": "0xff00", "usage": "0x02" },
+        { "role": "short", "usagePage": "0xff00", "usage": "0x01", "optional": true }
+      ]
+    },
+    {
+      "name": "罗技蓝牙设备（HID++）",
+      "bus": "Hid",
+      "vid": "0x046d",
+      "channels": [
+        { "role": "long", "usagePage": "0xff43", "usage": "0x0202" }
+      ]
+    }
+  ],
+  "permissions": ["devices"]
+}

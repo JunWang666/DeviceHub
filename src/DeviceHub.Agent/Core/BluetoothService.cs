@@ -125,7 +125,8 @@ public sealed class BluetoothService : IDisposable
     public IReadOnlyList<DeviceInfo> Devices()
     {
         var driver = AapDriver.Installed();
-        return _paired.Values.Select(pd =>
+        // 同一台设备可能以多个 DeviceInformation 出现（重新配对、经典 / LE 各一条），按设备键合并，已连接的优先。
+        return _paired.Values.GroupBy(p => p.Key).Select(g => g.OrderByDescending(p => p.Connected).First()).Select(pd =>
         {
             var channels = new List<HidChannelInfo> { new() { Id = "continuity", Kind = ChannelKinds.Continuity, InputLength = AdvertLength } };
             if (driver is not null) channels.Add(new HidChannelInfo { Id = "aap", Kind = ChannelKinds.Aap, InputLength = AapMaxFrame, OutputLength = AapMaxFrame });

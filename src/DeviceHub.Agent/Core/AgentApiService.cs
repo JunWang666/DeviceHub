@@ -43,14 +43,24 @@ public sealed class AgentApiService : IAgentApi
         var declared = (owner is null ? null : _plugins.MatchDevice(owner, d)?.Name)
                        ?? candidates.Select(id => _plugins.MatchDevice(id, d)?.Name).FirstOrDefault(n => n is not null);
         var desc = owner is null ? null : await _supervisor.DescribeDeviceAsync(owner, d.DeviceKey);
+        var defaultName = desc?.Title ?? declared ?? d.DisplayName;
+        string? custom = null;
+        if (owner is not null)
+        {
+            _perms.RememberName(owner, d.DeviceKey, defaultName);
+            _perms.RememberGlyph(owner, d.DeviceKey, desc?.Glyph);
+            custom = _perms.GetNames(owner, d.DeviceKey).CustomName;
+        }
         return d with
         {
             OwnerPluginId = owner,
             OwnerPluginName = owner is null ? null : plugins.TryGetValue(owner, out var p) ? p.DisplayName : owner,
             GrantedAt = grant?.GrantedAt,
             HasCandidatePlugin = candidates.Count > 0,
-            DisplayName = desc?.Title ?? declared ?? d.DisplayName,
+            DisplayName = custom ?? defaultName,
+            DefaultName = defaultName,
             Subtitle = desc?.Subtitle,
+            Glyph = Glyphs.IsValid(desc?.Glyph) ? desc!.Glyph : owner is null ? null : _perms.GetGlyph(owner, d.DeviceKey),
         };
     }
 
@@ -94,11 +104,16 @@ public sealed class AgentApiService : IAgentApi
     public Task<IReadOnlyList<GrantInfo>> ListGrantsAsync()
     {
         var plugins = _supervisor.List().ToDictionary(p => p.Id);
-        var devices = _broker.Enumerate().ToDictionary(d => d.DeviceKey);
+        var devices = new Dictionary<string, DeviceInfo>();
+        foreach (var d in _broker.Enumerate()) devices.TryAdd(d.DeviceKey, d);
         IReadOnlyList<GrantInfo> list = _perms.AllGrants()
             .Select(g =>
             {
                 var dev = devices.GetValueOrDefault(g.DeviceKey);
+                // 离线时用上次在线时记下的名字；在线时也优先用它（它来自插件描述，比 manifest 名更具体）
+                var (last, custom) = _perms.GetNames(g.PluginId, g.DeviceKey);
+                var live = dev is null ? null : _plugins.MatchDevice(g.PluginId, dev)?.Name ?? dev.DisplayName;
+                var defaultName = last ?? live ?? _plugins.DeclaredName(g.PluginId, g.DeviceKey) ?? "";
                 return new GrantInfo
                 {
                     PluginId = g.PluginId,
@@ -106,14 +121,20 @@ public sealed class AgentApiService : IAgentApi
                     Scope = g.Scope,
                     GrantedAt = g.GrantedAt,
                     PluginDisplayName = plugins.TryGetValue(g.PluginId, out var p) ? p.DisplayName : g.PluginId,
-                    DeviceDisplayName = dev is null ? "" : _plugins.MatchDevice(g.PluginId, dev)?.Name ?? dev.DisplayName,
+                    DeviceDisplayName = custom ?? defaultName,
+                    DefaultName = defaultName,
+                    CustomName = custom,
                     DeviceConnected = dev is not null,
+                    DeviceGlyph = _perms.GetGlyph(g.PluginId, g.DeviceKey),
                 };
             })
             .OrderByDescending(g => g.GrantedAt)
             .ToList();
         return Task.FromResult(list);
     }
+
+    public Task RenameDeviceAsync(string pluginId, string deviceKey, string? name)
+    { _perms.SetCustomName(pluginId, deviceKey, name); return Task.CompletedTask; }
 
     public Task RevokeGrantAsync(string pluginId, string deviceKey)
     { _perms.Revoke(pluginId, deviceKey); return Task.CompletedTask; }
@@ -149,14 +170,31 @@ public sealed class AgentApiService : IAgentApi
         }
     }
 
-    public async Task<string> InstallPluginPackageAsync(string packagePath)
+    /// <summary>安装并立即切换：先停旧版本刷写状态，装好后启动新版本后端；安装失败时把旧版本重新启动起来。</summary>
+    public async Task<PluginInstallResult> InstallPluginPackageAsync(string packagePath)
     {
         var id = PeekId(packagePath);
-        if (id is not null) await _supervisor.StopAsync(id); // 已在运行的旧版先停，刷写状态
-        var r = _plugins.InstallPackage(packagePath);
-        if (r.Activated) await _supervisor.StartAsync(r.Id);  // 新插件立即启动后端；UI 需重启界面后加载
-        return r.Id;
+        if (id is not null) await _supervisor.StopAsync(id);
+        try
+        {
+            var r = _plugins.InstallPackage(packagePath);
+            id = r.Id;
+            return new PluginInstallResult { Id = r.Id, Version = r.Version, Previous = r.Previous };
+        }
+        finally
+        {
+            if (id is not null) await _supervisor.StartAsync(id);
+        }
     }
+
+    public async Task<string?> RollbackPluginAsync(string pluginId)
+    {
+        await _supervisor.StopAsync(pluginId);
+        try { return _plugins.Rollback(pluginId); }
+        finally { await _supervisor.StartAsync(pluginId); }
+    }
+
+    public Task<UsbTopology> GetUsbTopologyAsync() => Task.Run(Native.NativeUsb.Scan);
 
     private static string? PeekId(string packagePath)
     {

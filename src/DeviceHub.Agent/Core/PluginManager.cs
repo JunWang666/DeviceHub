@@ -153,12 +153,31 @@ public sealed class PluginManager
     public DeviceMatch? MatchDevice(string pluginId, DeviceInfo device)
     {
         var m = ActiveManifest(pluginId);
-        if (m is null || LoadState(pluginId).Disabled) return null;
+        // 子设备不按 manifest 匹配：它只属于发布它的插件，也没有可声明的通道。
+        if (m is null || device.IsChild || LoadState(pluginId).Disabled) return null;
         return m.Devices.FirstOrDefault(d =>
             string.Equals(d.Bus, device.Bus.ToString(), StringComparison.OrdinalIgnoreCase) &&
             (d.Vid == 0 || d.Vid == device.Vid) &&
             (d.Pid.Count == 0 || d.Pid.Contains(device.Pid)) &&
             d.Channels.Where(c => !c.Optional).All(c => device.Channels.Any(c.Matches)));
+    }
+
+    /// <summary>
+    /// 设备不在线时，按设备键里的总线与 VID/PID（"hid:1a2c:7fff:…"、"bt:004c:…"）在 manifest 里找声明名，
+    /// 给没记下名字的旧授权记录兜底。
+    /// </summary>
+    public string? DeclaredName(string pluginId, string deviceKey)
+    {
+        var m = ActiveManifest(pluginId);
+        if (m is null) return null;
+        var parts = deviceKey.Split(':');
+        var bus = parts[0] switch { "hid" => "Hid", "bt" => "Bluetooth", _ => null };
+        const System.Globalization.NumberStyles hex = System.Globalization.NumberStyles.HexNumber;
+        if (bus is null || parts.Length < 3 || !ushort.TryParse(parts[1], hex, null, out var vid)
+            || !ushort.TryParse(parts[2], hex, null, out var pid)) return null;
+        return m.Devices.FirstOrDefault(d =>
+            string.Equals(d.Bus, bus, StringComparison.OrdinalIgnoreCase) &&
+            (d.Vid == 0 || d.Vid == vid) && (d.Pid.Count == 0 || d.Pid.Contains(pid)))?.Name;
     }
 
     /// <summary>
@@ -178,11 +197,13 @@ public sealed class PluginManager
         return spec is null ? (null, null) : (device.Channels.FirstOrDefault(spec.Matches), spec);
     }
 
-    public sealed record InstallResult(string Id, string Version, bool Activated);
+    /// <summary>安装结果。Previous 为安装前的 active 版本（新插件为 null），可用 <see cref="Rollback"/> 回到它。</summary>
+    public sealed record InstallResult(string Id, string Version, string? Previous);
 
     /// <summary>
-    /// 安装插件包（.dhplugin = zip：manifest.json + backend/ + ui/）。
-    /// 未安装过的插件直接设为 active；已有版本时设为 pending，由 <see cref="ApplyPendingIfAny"/> 切换。
+    /// 安装插件包（.dhplugin = zip：manifest.json + backend/ + ui/），立即设为 active。
+    /// 原来的 active 版本记为 previous 供回滚，再旧的版本目录清掉。调用方负责先停、后启插件进程。
+    /// 重装同一版本会覆盖该版本目录（App 若已加载它的界面，文件被占用时会失败，需先重启界面）。
     /// </summary>
     public InstallResult InstallPackage(string packagePath)
     {
@@ -201,15 +222,38 @@ public sealed class PluginManager
             Directory.Move(tmp, target);
 
             var st = File.Exists(Path.Combine(Root, manifest.Id, "state.json")) ? LoadState(manifest.Id) : new PluginState();
-            bool activate = string.IsNullOrEmpty(st.Active) || !Directory.Exists(Path.Combine(Root, manifest.Id, st.Active));
-            if (activate) { st.Active = manifest.Version; st.Pending = null; }
-            else if (st.Active != manifest.Version) st.Pending = manifest.Version;
+            var old = !string.IsNullOrEmpty(st.Active) && Directory.Exists(Path.Combine(Root, manifest.Id, st.Active)) ? st.Active : null;
+            if (old is not null && old != manifest.Version) st.Previous = old;
+            st.Active = manifest.Version;
+            st.Pending = null;
             st.Disabled = false;
             SaveState(manifest.Id, st);
-            _log.LogInformation("已安装插件包 {Plugin} v{Ver}（{Mode}）", manifest.Id, manifest.Version, activate ? "立即启用" : "重启后生效");
-            return new InstallResult(manifest.Id, manifest.Version, activate);
+            CleanupVersions(manifest.Id);
+            _log.LogInformation("已安装插件包 {Plugin} v{Ver}（原 {Old}）", manifest.Id, manifest.Version, old ?? "无");
+            return new InstallResult(manifest.Id, manifest.Version, old == manifest.Version ? st.Previous : old);
         }
         finally { try { if (Directory.Exists(tmp)) Directory.Delete(tmp, true); } catch { } }
+    }
+
+    /// <summary>回到上一个版本（active 与 previous 互换）。没有可回滚的版本时返回 null。调用方负责重启插件进程。</summary>
+    public string? Rollback(string pluginId)
+    {
+        var st = LoadState(pluginId);
+        if (string.IsNullOrEmpty(st.Previous) || !Directory.Exists(Path.Combine(Root, pluginId, st.Previous))) return null;
+        (st.Active, st.Previous) = (st.Previous, st.Active);
+        st.Pending = null;
+        SaveState(pluginId, st);
+        _log.LogInformation("已回滚 {Plugin} → v{Ver}", pluginId, st.Active);
+        return st.Active;
+    }
+
+    /// <summary>只留 active / previous / pending 三个版本目录，其余删掉（被占用的跳过，下次再删）。</summary>
+    private void CleanupVersions(string pluginId)
+    {
+        var st = LoadState(pluginId);
+        foreach (var v in VersionDirs(pluginId).Where(v => v != st.Active && v != st.Previous && v != st.Pending))
+            try { Directory.Delete(Path.Combine(Root, pluginId, v), true); }
+            catch (Exception ex) { _log.LogDebug(ex, "旧版本目录暂时删不掉 {Plugin} v{Ver}", pluginId, v); }
     }
 
     /// <summary>
@@ -227,11 +271,11 @@ public sealed class PluginManager
                 var entry = zip.GetEntry("manifest.json") ?? throw new InvalidOperationException("缺少 manifest.json");
                 using var s = entry.Open();
                 var m = JsonSerializer.Deserialize<PluginManifest>(s, CaseInsensitive) ?? throw new InvalidOperationException("manifest 无效");
-                var installed = File.Exists(Path.Combine(Root, m.Id, "state.json")) ? LoadState(m.Id).Active : null;
-                if (installed is not null && Directory.Exists(Path.Combine(Root, m.Id, installed))
-                    && CompareVersion(installed, m.Version) >= 0) continue;
-                var r = InstallPackage(pkg);
-                if (!r.Activated) ApplyPendingIfAny(r.Id); // Agent 正在启动，直接切到附带的新版本
+                var st = File.Exists(Path.Combine(Root, m.Id, "state.json")) ? LoadState(m.Id) : null;
+                if (st is not null && Directory.Exists(Path.Combine(Root, m.Id, st.Active))
+                    && CompareVersion(st.Active, m.Version) >= 0) continue;
+                if (st?.Previous == m.Version) continue; // 用户刚从这个版本回滚，别每次启动又装回去
+                InstallPackage(pkg); // Agent 正在启动、插件还没起来，直接切到附带的新版本
             }
             catch (Exception ex) { _log.LogWarning(ex, "安装附带插件失败 {Pkg}", pkg); }
         }

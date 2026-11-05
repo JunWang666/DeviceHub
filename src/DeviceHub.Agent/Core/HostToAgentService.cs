@@ -69,4 +69,76 @@ public sealed class HostToAgentService : IHostToAgentApi
 
     public Task NotifyAsync(string pluginId, string title, string message)
     { Check(pluginId); _log.LogInformation("[通知:{Plugin}] {Title} — {Msg}", pluginId, title, message); return Task.CompletedTask; }
+
+    /// <summary>
+    /// 只允许给自己管理的设备弹提示；设备名由核心按用户看到的名称填写（自定义名 &gt; 上次显示名 &gt; 核心名称），
+    /// 文本截断、图标限定在 Segoe Fluent Icons 私用区，插件只能在模板内发挥。
+    /// </summary>
+    public Task ShowOsdAsync(string pluginId, string deviceKey, OsdContent content)
+    {
+        Check(pluginId);
+        if (_perms.GetGrant(pluginId, deviceKey) != AccessScope.Always) return Task.CompletedTask;
+        var dev = _broker.Find(deviceKey);
+        var (last, custom) = _perms.GetNames(pluginId, deviceKey);
+        var name = custom ?? last ?? dev?.DisplayName ?? _plugins.DeclaredName(pluginId, deviceKey) ?? "未知设备";
+        var text = (content.Text ?? "").ReplaceLineEndings(" ").Trim();
+        if (text.Length > OsdContent.MaxTextLength) text = text[..(OsdContent.MaxTextLength - 1)] + "…";
+        int? pct = content.Percent is { } p ? Math.Clamp(p, 0, 100) : null;
+        var msg = new OsdMessage
+        {
+            PluginId = pluginId,
+            DeviceKey = deviceKey,
+            DeviceName = name,
+            Kind = content.Kind,
+            Glyph = ValidGlyph(content.Glyph) ?? DefaultGlyph(content.Kind, pct),
+            Text = text,
+            Percent = pct,
+        };
+        _log.LogInformation("[OSD:{Plugin}] {Device}: {Text}", pluginId, name, text);
+        _appHub.Osd(msg);
+        return Task.CompletedTask;
+    }
+
+    private static string? ValidGlyph(string? g) => Glyphs.IsValid(g) ? g : null;
+
+    /// <summary>Segoe Fluent Icons：Battery0–10 = E850–E85A，BatteryCharging0–10 = E85B–E865。</summary>
+    private static string DefaultGlyph(OsdKind kind, int? pct) => kind switch
+    {
+        OsdKind.Connected => "",
+        OsdKind.Disconnected => "",
+        OsdKind.BatteryLow => char.ConvertFromUtf32(0xE850 + Math.Clamp((pct ?? 10) / 10, 0, 10)),
+        OsdKind.Charging => char.ConvertFromUtf32(0xE85B + Math.Clamp((pct ?? 50) / 10, 0, 10)),
+        OsdKind.Charged => "",
+        OsdKind.Warning => "",
+        _ => "",
+    };
+
+    public Task PublishChildrenAsync(string pluginId, string parentKey, IReadOnlyList<ChildDevice> children)
+    {
+        Check(pluginId);
+        if (DeviceKeys.IsChild(parentKey) || _perms.GetGrant(pluginId, parentKey) != AccessScope.Always)
+        {
+            _log.LogWarning("拒绝发布子设备：{Plugin} 未获 {Parent} 的授权", pluginId, parentKey);
+            return Task.CompletedTask;
+        }
+        foreach (var c in children) _perms.InheritGrant(pluginId, parentKey, DeviceKeys.Child(parentKey, c.Id));
+        if (_broker.SetChildren(pluginId, parentKey, children))
+        {
+            _log.LogInformation("子设备更新 {Parent}: {Children}", parentKey, string.Join(", ", children.Select(c => $"{c.Id}={c.Name}{(c.Connected ? "" : "(离线)")}")));
+            _appHub.DevicesChanged(_broker.Enumerate());
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task ForgetChildAsync(string pluginId, string parentKey, string childId)
+    {
+        Check(pluginId);
+        if (DeviceKeys.IsChild(parentKey) || _perms.GetGrant(pluginId, parentKey) != AccessScope.Always) return Task.CompletedTask;
+        var key = DeviceKeys.Child(parentKey, childId);
+        _perms.Revoke(pluginId, key);
+        _broker.RemoveChild(key);
+        _log.LogInformation("移除子设备 {Child}", key);
+        _appHub.DevicesChanged(_broker.Enumerate());
+        return Task.CompletedTask;
+    }
 }

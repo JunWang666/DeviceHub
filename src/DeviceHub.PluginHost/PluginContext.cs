@@ -23,6 +23,8 @@ public sealed class PluginContext : IPluginContext
     }
 
     public Task PushStateAsync(string deviceKey, string stateJson) => _agent.PushStateAsync(PluginId, deviceKey, stateJson);
+    public Task PublishChildrenAsync(string parentKey, IReadOnlyList<ChildDevice> children) => _agent.PublishChildrenAsync(PluginId, parentKey, children);
+    public Task ForgetChildAsync(string parentKey, string childId) => _agent.ForgetChildAsync(PluginId, parentKey, childId);
 
     private sealed class Channel(string pid, IHostToAgentApi a) : IDeviceChannel
     {
@@ -46,5 +48,6 @@ public sealed class PluginContext : IPluginContext
     private sealed class Notifier(string pid, IHostToAgentApi a) : INotifier
     {
         public Task ShowAsync(string title, string message) => a.NotifyAsync(pid, title, message);
+        public Task ShowOsdAsync(string deviceKey, OsdContent content) => a.ShowOsdAsync(pid, deviceKey, content);
     }
 }
