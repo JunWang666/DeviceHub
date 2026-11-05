@@ -1,4 +1,4 @@
-﻿using DeviceHub.Contracts;
+using DeviceHub.Contracts;
 using Microsoft.Extensions.Logging;
 
 namespace DeviceHub.Agent.Core;
@@ -16,10 +16,12 @@ public sealed class HostToAgentService : IHostToAgentApi
     private readonly AppHub _appHub;
     private readonly PluginManager _plugins;
     private readonly ILogger _log;
+    private readonly RemapService _remap;
 
     public HostToAgentService(string pluginId, DeviceBroker broker, PermissionService perms,
-        StorageService storage, AppHub appHub, PluginManager plugins, ILogger log)
+        StorageService storage, AppHub appHub, PluginManager plugins, RemapService remap, ILogger log)
     {
+        _remap = remap;
         _boundPluginId = pluginId;
         _broker = broker; _perms = perms; _storage = storage; _appHub = appHub; _plugins = plugins; _log = log;
     }
@@ -131,6 +133,17 @@ public sealed class HostToAgentService : IHostToAgentApi
             _log.LogInformation("子设备更新 {Parent}: {Children}", parentKey, string.Join(", ", children.Select(c => $"{c.Id}={c.Name}{(c.Connected ? "" : "(离线)")}")));
             _appHub.DevicesChanged(_broker.Enumerate());
         }
+        return Task.CompletedTask;
+    }
+
+    /// <summary>设备按键：只收自己管理（Always 授权）的设备的事件，设备名由核心填写。</summary>
+    public Task RaiseDeviceInputAsync(string pluginId, string deviceKey, DeviceInputEvent e)
+    {
+        Check(pluginId);
+        if (_perms.GetGrant(pluginId, deviceKey) != AccessScope.Always) return Task.CompletedTask;
+        var (last, custom) = _perms.GetNames(pluginId, deviceKey);
+        var name = custom ?? last ?? _broker.Find(deviceKey)?.DisplayName ?? "设备";
+        _remap.OnDeviceInput(pluginId, deviceKey, name, e);
         return Task.CompletedTask;
     }
 

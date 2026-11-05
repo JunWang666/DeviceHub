@@ -62,6 +62,12 @@ public interface IPluginContext
     /// 只是暂时离线的子设备不要调用，在 <see cref="PublishChildrenAsync"/> 里标为未连接即可（它会留在侧边栏）。
     /// </summary>
     Task ForgetChildAsync(string parentKey, string childId);
+
+    /// <summary>
+    /// 上报设备按键的按下 / 抬起：用于系统收不到的按键（插件从设备协议里读到的，如罗技鼠标被转发的手势键）。
+    /// 核心的「按键映射」会把它当作可映射的触发键。deviceKey 为本插件管理的设备或其子设备。
+    /// </summary>
+    Task RaiseDeviceInputAsync(string deviceKey, DeviceInputEvent e) => Task.CompletedTask;
 }
 
 /// <summary>

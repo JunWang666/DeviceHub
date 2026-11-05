@@ -22,6 +22,7 @@ public sealed class AppHub
         Safe(c => c.OnPluginStatePushed(pluginId, deviceKey, json));
     public void UsbChanged() => Safe(c => c.OnUsbChanged());
     public void Osd(OsdMessage m) => Safe(c => c.OnOsd(m));
+    public void InputCaptured(InputCaptureEvent e) => Safe(c => c.OnInputCaptured(e));
 
     private void Safe(Action<IAppCallback> act)
     {

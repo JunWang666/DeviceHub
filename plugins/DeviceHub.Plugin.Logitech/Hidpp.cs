@@ -217,6 +217,28 @@ public static class HidppParse
         return 0;
     }
 
+    /// <summary>
+    /// 0x1B04 控件 id → 名称（常见的鼠标按键；取自 Solaar special_keys.CONTROL）。
+    /// 不认识的按键用 isMouse 标志和编号兜底，用户在「按键」页按一下就能看出是哪个。
+    /// </summary>
+    public static string ControlName(int cid, bool isMouse) => cid switch
+    {
+        0x0050 => "左键",
+        0x0051 => "右键",
+        0x0052 => "中键（滚轮按下）",
+        0x0053 => "后退键",
+        0x0056 => "前进键",
+        0x005B => "滚轮向左倾斜",
+        0x005D => "滚轮向右倾斜",
+        0x00C3 => "手势键",
+        0x00C4 => "滚轮模式切换键（SmartShift）",
+        0x00D7 => "虚拟手势键",
+        0x00FD => "DPI 切换键",
+        0x0001 => "音量 +", 0x0002 => "音量 −", 0x0003 => "静音", 0x0004 => "播放 / 暂停",
+        0x0005 => "下一曲", 0x0006 => "上一曲", 0x0007 => "停止",
+        _ => isMouse ? $"鼠标按键 0x{cid:X4}" : $"按键 0x{cid:X4}",
+    };
+
     public static string BatteryStatus(byte s) => s switch
     {
         0 => "放电中", 1 => "充电中", 2 => "即将充满", 3 => "已充满", 4 => "慢速充电",

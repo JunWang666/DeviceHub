@@ -289,3 +289,21 @@ src\DeviceHub.App\bin\x64\Debug\net10.0-windows10.0.26100.0\win-x64\DeviceHub.Ap
   自检新增：每个插件每个小组件的每种尺寸都创建一次，11 个组合全部成功。
 - 版本：插件罗技 1.3.0，AirPods / GameSir / GK65 1.1.0（依赖新 SDK 的 `GetAccessAsync`，需配新版 Agent）。
 - **未验证**：VM 截图为空白，主页与小组件的外观、拖动排序、右键菜单未目视确认；没有罗技 / AirPods / GameSir 真机在线，小组件的在线数据只按 DTO 走查。
+
+## 工具 › 按键映射、罗技按键接管（2026-11-05）
+
+- **按键映射（核心内置工具，参照 PowerToys 键盘管理器）**：侧边栏新增「工具」分组。页面分「按键 / 快捷键 / 宏」三页；
+  触发可以是单键、组合键、鼠标中键 / 侧键 / 滚轮倾斜（可带修饰键）、插件上报的设备按键；动作可以是按键 / 组合键、鼠标键、输入文本、宏、启动程序、禁用；
+  规则可限定前台程序。宏支持按键、按下 / 抬起、文本、等待、鼠标，可录制，可重复，执行中再按一次触发键停止。
+- **引擎在 Agent**（`RemapService`）：专用线程装 WH_KEYBOARD_LL / WH_MOUSE_LL（没有规则、不在录制时不装），锁内只算要注入的输入，锁外 SendInput；
+  自己注入的输入带 dwExtraInfo 标记直接放行；快捷键映射先放开触发修饰键、抬起后按回仍按着的；放开 Win / Alt 前补一个 0xFF 空键防开始菜单。
+  配置存 `%LOCALAPPDATA%\DeviceHub\remap.json`。录制也走钩子（录制期间按键不外泄），UI 断开或超时自动结束。
+- **设备按键 API**：`IPluginContext.RaiseDeviceInputAsync` → `IHostToAgentApi.RaiseDeviceInputAsync`，核心只收插件有 Always 授权的设备的事件、设备名由核心填写。
+- **罗技 1.4.0**：实现 HID++ 0x1B04（getCount / getCidInfo / getCidReporting / setCidReporting），设备页新增「按键」分页：
+  列出可编程按键、可接管的有开关，接管后按下实时高亮并上报给按键映射。接管的按键按设备记住，重连后自动重新接管；断开时放开所有按着的键。
+  有接管按键时监听改为在长报告集合上阻塞读 25ms，事件延迟从 ≤200ms 降到几十毫秒。
+- 自检：`DeviceHub.Agent.exe --remap-selftest`（临时配置、注入 F13–F24、观察钩子核对输出，可与正在运行的 Agent 并存）8 项全过：
+  单键、快捷键（放开并恢复 Shift）、宏、设备按键→Ctrl+F20、录制组合键不外泄、录制组合键、录制设备按键、总开关关闭后放行。
+  App 自检新增按键映射页加载：`REMAP page ok rules=0 macros=0 engineError=none`；罗技页（含新分页）XAML 加载成功。
+- **未验证**：没有罗技真机在线，0x1B04 的回包解析、手势键的 CID、接管后事件格式只按 Solaar / libratbag 的协议走查；
+  VM 截图为空白，按键映射页与对话框外观未目视确认；鼠标钩子和文本输入未做注入测试（会影响前台程序）。

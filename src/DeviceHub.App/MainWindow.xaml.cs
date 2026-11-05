@@ -70,6 +70,10 @@ public sealed partial class MainWindow : Window
                 Kind = OsdKind.BatteryLow, Glyph = "", Text = "电量低（12%），请及时充电", Percent = 12,
             });
             Console.WriteLine("SELFTEST: 屏幕状态提示窗口已显示");
+            var remap = await agent.GetRemapConfigAsync();
+            ContentFrame.Navigate(typeof(RemapPage));
+            _ = new KeyPicker(CaptureMode.Trigger);
+            Console.WriteLine($"SELFTEST: REMAP page ok rules={remap.Rules.Count} macros={remap.Macros.Count} engineError={(await agent.GetRemapEngineErrorAsync()) ?? "none"}");
             // 每个已安装插件的 XAML 都加载一次（不依赖设备在线；设备标识是假的，后端返回默认状态）。
             foreach (var p in _state.Plugins.Where(p => p.UiAssemblyPath is not null && p.UiPageTypeName is not null))
             {
@@ -177,6 +181,7 @@ public sealed partial class MainWindow : Window
         else if (tag == "new") ContentFrame.Navigate(typeof(NewDevicePage));
         else if (tag == "plugins") ContentFrame.Navigate(typeof(PluginsPage));
         else if (tag == "usb") ContentFrame.Navigate(typeof(UsbPage));
+        else if (tag == "tool:remap") ContentFrame.Navigate(typeof(RemapPage));
         else if (tag.StartsWith("dev:"))
         {
             var key = tag[4..];

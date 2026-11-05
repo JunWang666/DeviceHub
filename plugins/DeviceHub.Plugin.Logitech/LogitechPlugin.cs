@@ -158,8 +158,8 @@ public sealed class LogitechPlugin : IDevicePlugin
             details.Add(new("Feature", string.Join("、", dev.Features.Select(f => f.Name))));
         }
         details.Add(new("最近读取", st.LastReadAt is { } t ? t.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") : "尚未读取"));
-        details.Add(new("已支持", "电量、DPI、回报率、指针速度、SmartShift、滚轮方向/高精度、Fn 反转、Easy-Switch、板载配置"));
-        details.Add(new("尚未支持", "灯效、按键重映射、宏、配对新设备、扩展 DPI/回报率（0x2202/0x8061）"));
+        details.Add(new("已支持", "电量、DPI、回报率、指针速度、SmartShift、滚轮方向/高精度、Fn 反转、Easy-Switch、板载配置、按键接管（配合 工具 › 按键映射）"));
+        details.Add(new("尚未支持", "灯效、板载按键配置、扩展 DPI/回报率（0x2202/0x8061）"));
         details.Add(new("注意", "G HUB / Logi Options+ 同时运行时会互相覆盖设置，建议先退出"));
         return Task.FromResult<DeviceDescription?>(new DeviceDescription
         {
@@ -358,6 +358,22 @@ public sealed class LogitechPlugin : IDevicePlugin
                 break;
             }
 
+            case "SetDivert" when Feat(deviceKey, dev, Feature.ReprogControlsV4) is { } f:
+            {
+                int cid = Int(a, "cid", 0);
+                bool divert = Bool(a, "divert", false);
+                var ctl = ds.Controls.FirstOrDefault(x => x.Cid == cid);
+                if (ctl is not { Divertable: true }) { ds.Status = "这个按键不能接管"; break; }
+                if (await Write(deviceKey, st, ds, DivertRequest(dev, f, cid, divert)))
+                {
+                    ctl.Diverted = divert;
+                    if (!divert && ctl.Pressed) { ctl.Pressed = false; await RaiseAsync(deviceKey, st, ds, ctl); }
+                    await SaveDivertsAsync(deviceKey, st, ds);
+                    ds.Status = divert ? $"已接管：{ctl.Name}" : $"已恢复原功能：{ctl.Name}";
+                }
+                break;
+            }
+
             case "SetOnboardMode" when ds.Onboard is { } ob && Feat(deviceKey, dev, Feature.OnboardProfiles) is { } f:
             {
                 bool onboard = Bool(a, "onboard", ob.Onboard);
@@ -547,7 +563,7 @@ public sealed class LogitechPlugin : IDevicePlugin
         _features[(deviceKey, ds.Index)] = feats;
         ds.Features = feats.OrderBy(kv => kv.Key)
             .Select(kv => new FeatureEntry { Id = $"0x{kv.Key:X4}", Name = Feature.Name(kv.Key), Index = kv.Value }).ToList();
-        ds.Unsupported = new[] { Feature.ColorLedEffects, Feature.RgbEffects, Feature.ReprogControlsV4, Feature.ExtendedDpi, Feature.ExtendedReportRate }
+        ds.Unsupported = new[] { Feature.ColorLedEffects, Feature.RgbEffects, Feature.ExtendedDpi, Feature.ExtendedReportRate }
             .Where(feats.ContainsKey).Select(Feature.Name).Distinct().ToList();
 
         if (feats.TryGetValue(Feature.DeviceName, out var fn)) await ReadName(deviceKey, st, ds, fn);
@@ -567,6 +583,97 @@ public sealed class LogitechPlugin : IDevicePlugin
             ds.Hosts = new HostState { Count = hr[4], Current = hr[5] };
         else ds.Hosts = null;
         if (feats.TryGetValue(Feature.OnboardProfiles, out var fo)) await ReadOnboard(deviceKey, st, ds, fo); else ds.Onboard = null;
+        if (feats.TryGetValue(Feature.ReprogControlsV4, out var fr4)) await ReadControlsAsync(deviceKey, st, ds, fr4); else ds.Controls = new();
+    }
+
+    // —— 可编程按键（0x1B04）：fn0 getCount、fn1 getCidInfo、fn2 getCidReporting、fn3 setCidReporting（Solaar / libratbag）——
+
+    private static string DivertKey(string ownKey) => "divert:" + ownKey;
+
+    /// <summary>列出设备的按键，读出当前是否被接管，再把用户在本软件里接管过的按键重新接管（接管在设备断电 / 重连后会失效）。</summary>
+    private async Task ReadControlsAsync(string deviceKey, LogitechState st, HidppDeviceState ds, byte f)
+    {
+        var dev = (byte)ds.Index;
+        if (await TransactAsync(deviceKey, st, Hidpp.Call(dev, f, 0, "读取按键数")) is not { Data: { } c }) return;
+        var list = new List<ControlState>();
+        for (int i = 0; i < Math.Min((int)c[4], 32); i++)
+        {
+            // [cid(2), tid(2), flags1, 位置, 分组, 分组掩码, flags2]
+            if (await TransactAsync(deviceKey, st, Hidpp.Call(dev, f, 1, "读取按键信息", (byte)i)) is not { Data: { } r }) continue;
+            int cid = (r[4] << 8) | r[5];
+            int flags = r[8] | (r[12] << 8);
+            var ctl = new ControlState
+            {
+                Cid = cid, Tid = (r[6] << 8) | r[7], Flags = flags,
+                IsMouse = (flags & 0x01) != 0,
+                Divertable = (flags & 0x20) != 0,
+            };
+            ctl.Name = HidppParse.ControlName(cid, ctl.IsMouse);
+            if (ctl.Divertable &&
+                await TransactAsync(deviceKey, st, Hidpp.Call(dev, f, 2, "读取按键状态", (byte)(cid >> 8), (byte)cid)) is { Data: { } rep })
+                ctl.Diverted = (rep[6] & 0x01) != 0;
+            list.Add(ctl);
+        }
+        ds.Controls = list;
+
+        var saved = await _ctx.Storage.GetAsync<List<int>>(DivertKey(KeyOf(deviceKey, st, ds))) ?? new();
+        foreach (var ctl in list.Where(x => x.Divertable && !x.Diverted && saved.Contains(x.Cid)))
+            if (await TransactAsync(deviceKey, st, DivertRequest(dev, f, ctl.Cid, true)) is { Data: not null })
+                ctl.Diverted = true;
+    }
+
+    /// <summary>setCidReporting：[cid, 标志, remap(0 = 不变)]；标志 0x02 = "divert 位有效"，0x01 = 接管。</summary>
+    private static Hidpp.Request DivertRequest(byte dev, byte f, int cid, bool divert) =>
+        Hidpp.Call(dev, f, 3, divert ? "接管按键" : "取消接管按键", (byte)(cid >> 8), (byte)cid, (byte)(divert ? 0x03 : 0x02), 0, 0);
+
+    private async Task SaveDivertsAsync(string deviceKey, LogitechState st, HidppDeviceState ds)
+    {
+        var key = DivertKey(KeyOf(deviceKey, st, ds));
+        var saved = await _ctx.Storage.GetAsync<List<int>>(key) ?? new();
+        foreach (var ctl in ds.Controls.Where(x => x.Divertable))
+        {
+            saved.Remove(ctl.Cid);
+            if (ctl.Diverted) saved.Add(ctl.Cid);
+        }
+        await _ctx.Storage.SetAsync(key, saved);
+    }
+
+    /// <summary>被接管按键的按下 / 抬起：设备事件（0x1B04 function 0）里是当前按着的最多 4 个 CID。</summary>
+    private async Task OnDivertedButtonsAsync(string deviceKey, LogitechState st, HidppDeviceState ds, byte[] rep)
+    {
+        var held = new HashSet<int>();
+        for (int i = 4; i + 1 < rep.Length && i < 12; i += 2)
+        {
+            int cid = (rep[i] << 8) | rep[i + 1];
+            if (cid != 0) held.Add(cid);
+        }
+        bool changed = false;
+        foreach (var ctl in ds.Controls)
+        {
+            bool p = held.Contains(ctl.Cid);
+            if (p == ctl.Pressed) continue;
+            ctl.Pressed = p;
+            changed = true;
+            await RaiseAsync(deviceKey, st, ds, ctl);
+        }
+        if (changed) await Push(deviceKey, st);
+    }
+
+    private Task RaiseAsync(string deviceKey, LogitechState st, HidppDeviceState ds, ControlState ctl)
+    {
+        if (st.IsReceiver && ds.Id.Length == 0) return Task.CompletedTask;
+        return _ctx.RaiseDeviceInputAsync(KeyOf(deviceKey, st, ds),
+            new DeviceInputEvent { ControlId = ctl.Cid.ToString("X4"), Name = ctl.Name, Pressed = ctl.Pressed });
+    }
+
+    /// <summary>设备断开时放开所有按着的接管按键，免得映射出来的键卡住。</summary>
+    private async Task ReleaseControlsAsync(string deviceKey, LogitechState st, HidppDeviceState ds)
+    {
+        foreach (var ctl in ds.Controls.Where(x => x.Pressed))
+        {
+            ctl.Pressed = false;
+            await RaiseAsync(deviceKey, st, ds, ctl);
+        }
     }
 
     private async Task ReadName(string deviceKey, LogitechState st, HidppDeviceState ds, byte f)
@@ -736,6 +843,7 @@ public sealed class LogitechPlugin : IDevicePlugin
                         if (ping.Data is null)
                         {
                             ds.Online = false; ds.Status = "设备未连接"; changed = true;
+                            await ReleaseControlsAsync(deviceKey, st, ds);
                             await OsdAsync(deviceKey, st, ds, OsdKind.Disconnected, "已断开连接");
                             continue;
                         }
@@ -835,6 +943,8 @@ public sealed class LogitechPlugin : IDevicePlugin
     /// 一问一答期间读到的通知放进收件箱，在这里统一处理。
     /// </summary>
     private const int ListenInterval = 200;
+    /// <summary>有接管按键时每轮在长报告集合上等待的时长（也是一问一答最多多等的时间）。</summary>
+    private const int FastWaitMs = 25;
 
     private void StartListener(string deviceKey, LogitechState st)
     {
@@ -852,6 +962,8 @@ public sealed class LogitechPlugin : IDevicePlugin
                     var link = _links.GetValueOrDefault(deviceKey) ?? new Link(false, 0);
                     string[] roles = link.HasShort ? ["short", "long"] : ["long"];
                     bool failed = false;
+                    // 有被接管的按键时按键事件要及时转出去：在长报告集合上阻塞读一小会儿，代替两轮之间的 200ms 间隔。
+                    bool fast = st.Devices.Any(d => d.Online && d.Controls.Any(c => c.Diverted));
                     var gate = _locks.GetOrAdd(deviceKey, _ => new SemaphoreSlim(1, 1));
                     await gate.WaitAsync(cts.Token);
                     try
@@ -859,7 +971,7 @@ public sealed class LogitechPlugin : IDevicePlugin
                         foreach (var role in roles)
                             for (int i = 0; i < 16; i++)
                             {
-                                var r = await _ctx.Device.ReadInputAsync(deviceKey, 1, role);
+                                var r = await _ctx.Device.ReadInputAsync(deviceKey, fast && role == "long" && i == 0 ? FastWaitMs : 1, role);
                                 if (r.Status == DeviceIoStatus.Ok && r.Data is { } d) { inbox.Enqueue(d); continue; }
                                 failed |= r.Status is not (DeviceIoStatus.Ok or DeviceIoStatus.Timeout);
                                 break;
@@ -870,7 +982,9 @@ public sealed class LogitechPlugin : IDevicePlugin
                     while (inbox.TryDequeue(out var rep))
                         try { await OnReportAsync(deviceKey, st, rep); }
                         catch (Exception) { /* 单条通知处理失败不影响监听 */ }
-                    await Task.Delay(failed ? 1000 : ListenInterval, cts.Token);
+                    if (failed) await Task.Delay(1000, cts.Token);
+                    else if (!fast) await Task.Delay(ListenInterval, cts.Token);
+                    else await Task.Yield();
                 }
             }
             catch (OperationCanceledException) { }
@@ -911,6 +1025,7 @@ public sealed class LogitechPlugin : IDevicePlugin
                 if (!ds.Online) return;
                 ds.Online = false;
                 ds.Status = "设备未连接";
+                await ReleaseControlsAsync(deviceKey, st, ds);
                 await Push(deviceKey, st);
                 await OsdAsync(deviceKey, st, ds, OsdKind.Disconnected, "已断开连接");
                 return;
@@ -920,6 +1035,14 @@ public sealed class LogitechPlugin : IDevicePlugin
             if (!await ProbeAndRestoreAsync(deviceKey, st, ds)) return;
             await Push(deviceKey, st);
             await ConnectedOsdAsync(deviceKey, st, ds);
+            return;
+        }
+
+        // 被接管按键的事件：0x1B04 的 function 0（function 1 是 raw XY，不用）。
+        if (ds is { Online: true } && rep[0] == Hidpp.LongId && rep[3] == 0x00 &&
+            Feat(deviceKey, rep[1], Feature.ReprogControlsV4) is { } frc && rep[2] == frc)
+        {
+            await OnDivertedButtonsAsync(deviceKey, st, ds, rep);
             return;
         }
 

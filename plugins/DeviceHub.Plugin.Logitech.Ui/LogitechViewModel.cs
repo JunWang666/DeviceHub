@@ -83,6 +83,9 @@ public sealed class LogitechViewModel : INotifyPropertyChanged
     public bool HasDevice => D is not null;
     public bool IsPointer => D?.Kind is "mouse" or "trackball";
     public bool IsNotPointer => !IsPointer;
+    /// <summary>有分页（按键 / 按键测试）时显示分页栏，否则页头只显示一行连接信息。</summary>
+    public bool ShowTabs => IsPointer || HasControls;
+    public bool HideTabs => !ShowTabs;
     public bool DeviceOnline => D?.Online == true;
     public bool DeviceOffline => D is { Online: false };
     public string DeviceInfoText
@@ -251,6 +254,12 @@ public sealed class LogitechViewModel : INotifyPropertyChanged
         get => D?.Onboard is { Profile: > 0 } o ? o.Profile - 1 : -1;
         set { if (!_applying && value >= 0 && D?.Onboard is { } o && value + 1 != o.Profile) Invoke("SetProfile", new { index = D.Index, profile = value + 1 }); }
     }
+
+    // —— 可编程按键（0x1B04）——
+
+    public bool HasControls => D?.Controls.Count > 0;
+    public List<ControlDto> Controls => D?.Controls ?? new();
+    public void SetDivert(int cid, bool divert) { if (D is { } d) Invoke("SetDivert", new { index = d.Index, cid, divert }); }
 
     // —— 诊断 ——
 

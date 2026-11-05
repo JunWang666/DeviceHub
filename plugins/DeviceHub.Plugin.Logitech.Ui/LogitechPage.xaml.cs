@@ -13,14 +13,23 @@ public sealed partial class LogitechPage : UserControl
         Vm = new LogitechViewModel(bridge);
         InitializeComponent();
         MouseTestHost.Child = new MouseTestPanel();
+        var buttons = new ButtonsPanel(Vm.SetDivert);
+        ButtonsHost.Child = buttons;
+        Vm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(Vm.Controls)) buttons.Update(Vm.Controls, Vm.DeviceOnline);
+            // 分页被隐藏（如设备换成了不支持的）时回到设置页
+            if (e.PropertyName == nameof(Vm.HasControls) && !Vm.HasControls && Sections.SelectedItem == ButtonsTab) Sections.SelectedItem = SettingsTab;
+        };
         Loaded += async (_, _) => await Vm.LoadAsync();
     }
 
     private void Sections_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
     {
-        bool test = sender.SelectedItem == TestTab;
-        SettingsPanel.Visibility = test ? Visibility.Collapsed : Visibility.Visible;
-        TestPanel.Visibility = test ? Visibility.Visible : Visibility.Collapsed;
+        var sel = sender.SelectedItem;
+        SettingsPanel.Visibility = sel == SettingsTab || sel is null ? Visibility.Visible : Visibility.Collapsed;
+        ButtonsScroll.Visibility = sel == ButtonsTab ? Visibility.Visible : Visibility.Collapsed;
+        TestPanel.Visibility = sel == TestTab ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void Refresh_Click(object sender, RoutedEventArgs e) => Vm.Refresh();

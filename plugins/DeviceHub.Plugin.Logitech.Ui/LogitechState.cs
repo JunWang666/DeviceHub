@@ -26,6 +26,17 @@ public sealed class WheelDto { public bool HiRes { get; set; } public bool Inver
 public sealed class HostDto { public int Count { get; set; } public int Current { get; set; } }
 public sealed class OnboardDto { public bool Onboard { get; set; } public int ProfileCount { get; set; } public int Profile { get; set; } }
 public sealed class FeatureDto { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public int Index { get; set; } }
+public sealed class ControlDto
+{
+    public int Cid { get; set; }
+    public int Tid { get; set; }
+    public string Name { get; set; } = "";
+    public int Flags { get; set; }
+    public bool IsMouse { get; set; }
+    public bool Divertable { get; set; }
+    public bool Diverted { get; set; }
+    public bool Pressed { get; set; }
+}
 
 public sealed class HidppDeviceDto
 {
@@ -46,6 +57,7 @@ public sealed class HidppDeviceDto
     public bool? FnSwap { get; set; }
     public HostDto? Hosts { get; set; }
     public OnboardDto? Onboard { get; set; }
+    public List<ControlDto> Controls { get; set; } = new();
     public List<FeatureDto> Features { get; set; } = new();
     public List<string> Unsupported { get; set; } = new();
 }
