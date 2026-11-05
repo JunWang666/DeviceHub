@@ -38,7 +38,31 @@ public sealed class QuectelViewModel : INotifyPropertyChanged
         : State.Network.Cfun == 4 ? "飞行模式" : AtParse.RegText(State.Network.EpsRegistration);
     public bool ShowUnauthorized => !State.Authorized;
     public bool Busy => State.Busy;
-    public bool CanOperate => State.Authorized && State.Connected && !State.Busy;
+    public bool CanOperate => State.Authorized && State.Connected && !State.Busy && State.Driver.AtPortReady;
+
+    // —— 驱动 ——
+
+    public bool DriverMissing => State.Connected && !State.Driver.AtPortReady;
+    public string DriverMessage =>
+        (State.Driver.Missing.Count > 0 ? string.Join("；", State.Driver.Missing) + "。" : "没有找到模块的 AT 口。")
+        + "\n安装 Quectel Windows USB Driver（NDIS 版，含串口驱动）后会自动连接，不用重新插拔，也不用重启 DeviceHub。";
+
+    // —— 电脑联网 ——
+
+    public Microsoft.UI.Xaml.Controls.InfoBarSeverity PcSeverity => State.PcLink.Severity switch
+    {
+        "ok" => Microsoft.UI.Xaml.Controls.InfoBarSeverity.Success,
+        "error" => Microsoft.UI.Xaml.Controls.InfoBarSeverity.Error,
+        _ => Microsoft.UI.Xaml.Controls.InfoBarSeverity.Warning,
+    };
+    public bool PcKnown => State.PcLink.Summary.Length > 0;
+    public string PcSummary => State.PcLink.Summary;
+    public string PcAdvice => State.PcLink.Advice;
+    public string PcAdapter => D(State.PcLink.Adapter);
+    public string PcAdapterState => string.Join(" · ", new[] { State.PcLink.AdapterState, State.PcLink.AdapterIp }.Where(x => x.Length > 0)) is { Length: > 0 } s ? s : "—";
+    public string PcModuleIp => State.PcLink.ModuleIp.Length > 0 ? State.PcLink.ModuleIp : "没有数据连接";
+    public bool PcCanFix => State.PcLink.SuggestUsbNet >= 0 && State.PcLink.SuggestUsbNet != State.Module.UsbNet && CanOperate;
+    public string PcFixText => $"改成 {AtParse.UsbNetName(State.PcLink.SuggestUsbNet)} 模式";
 
     public string SignalGlyph => State.Network.EpsRegistration is 1 or 5 && State.Network.Cfun != 4
         ? char.ConvertFromUtf32(0xE86C + Math.Clamp(State.Signal.Bars, 0, 4)) : "";

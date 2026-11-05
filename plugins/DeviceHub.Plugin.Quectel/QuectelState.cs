@@ -9,6 +9,8 @@ public sealed class QuectelState
     public string Status { get; set; } = "";
     public bool Busy { get; set; }
 
+    public DriverInfo Driver { get; set; } = new();
+    public PcLinkInfo PcLink { get; set; } = new();
     public ModuleInfo Module { get; set; } = new();
     public SimInfo Sim { get; set; } = new();
     public NetworkInfo Network { get; set; } = new();
@@ -23,6 +25,35 @@ public sealed class QuectelState
     /// <summary>AT 控制台最近的收发记录（"&gt; " 发出，"&lt; " 收到）。</summary>
     public List<string> Console { get; set; } = new();
     public DateTimeOffset? LastPollAt { get; set; }
+}
+
+/// <summary>Windows 上模块各 USB 接口的驱动情况（核心按接口报告：COM 口 / 网卡 / 缺驱动）。</summary>
+public sealed class DriverInfo
+{
+    /// <summary>AT 口有驱动、出现了 COM 口：插件能工作的前提。</summary>
+    public bool AtPortReady { get; set; } = true;
+    public string AtPortName { get; set; } = "";
+    /// <summary>缺驱动的接口，如 "接口 2（AT 口）：未安装驱动"。</summary>
+    public List<string> Missing { get; set; } = new();
+}
+
+/// <summary>"电脑能不能通过模块上网"的诊断：结论 + 依据。</summary>
+public sealed class PcLinkInfo
+{
+    /// <summary>ok / warning / error。</summary>
+    public string Severity { get; set; } = "warning";
+    /// <summary>一句话结论，如"已连接，电脑可通过模块上网"。</summary>
+    public string Summary { get; set; } = "";
+    /// <summary>怎么解决（没问题时为空）。</summary>
+    public string Advice { get; set; } = "";
+    /// <summary>Windows 网卡：名称、驱动状态、连接状态、IP。</summary>
+    public string Adapter { get; set; } = "";
+    public string AdapterState { get; set; } = "";
+    public string AdapterIp { get; set; } = "";
+    /// <summary>模块侧：数据连接（PDP）拿到的 IP。</summary>
+    public string ModuleIp { get; set; } = "";
+    /// <summary>建议切到的 USB 网卡模式（-1 = 无建议）。</summary>
+    public int SuggestUsbNet { get; set; } = -1;
 }
 
 public sealed class ModuleInfo

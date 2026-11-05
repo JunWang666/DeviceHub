@@ -29,6 +29,8 @@ public sealed record HidChannelInfo
     public int InputLength { get; init; }
     public int OutputLength { get; init; }
     public int FeatureLength { get; init; }
+    /// <summary>通道的附加说明，含义随种类：net = 网卡 NetCfgInstanceId，nodriver = 缺驱动的原因；其他种类为 null。</summary>
+    public string? Detail { get; init; }
 }
 
 /// <summary>核心枚举到的物理设备。DeviceKey 在同一物理设备上保持稳定；HID 设备的多个集合聚合在 Channels 里。</summary>
@@ -140,6 +142,16 @@ public static class ChannelKinds
     /// 核心在插件第一次访问时打开端口、撤销授权或设备拔出时关闭；同一时间只有核心持有该端口。
     /// </summary>
     public const string Serial = "serial";
+    /// <summary>
+    /// USB 串口设备上的网卡接口（只读描述，不能读写）：<see cref="HidChannelInfo.Detail"/> 是 Windows 网卡的
+    /// NetCfgInstanceId（形如 {GUID}），插件可据此查网卡的连接状态与 IP。
+    /// </summary>
+    public const string Net = "net";
+    /// <summary>
+    /// 没装驱动（或驱动加载失败）的 USB 接口（只读描述，不能读写）：<see cref="HidChannelInfo.Detail"/> 是原因。
+    /// 让插件在驱动缺失时也能接管设备、提示用户装驱动；装好后通道变化，核心会让插件重新接管。
+    /// </summary>
+    public const string NoDriver = "nodriver";
 }
 
 /// <summary>插件清单与当前运行信息。</summary>

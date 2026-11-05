@@ -21,6 +21,8 @@ public sealed class ModuleSession : IAsyncDisposable
     private int _userOps;
 
     public QuectelState State { get; }
+    /// <summary>模块在 Windows 上的接口组成（用于"电脑联网"诊断）；测试工具里没有时为 null。</summary>
+    public ModuleLayout? Layout { get; set; }
     /// <summary>值得提醒用户的事件（新短信、来电、SIM 拔出），参数为 (种类, 文本)。</summary>
     public event Action<OsdKind, string>? Notice;
 
@@ -190,6 +192,7 @@ public sealed class ModuleSession : IAsyncDisposable
         State.Temperatures = AtParse.Temps((await Q("AT+QTEMP")).Value("+QTEMP:"));
 
         if (State.Gps.On == true) await ReadGpsAsync();
+        if (Layout is { } layout) State.PcLink = PcLink.Evaluate(layout, State, PcLink.Lookup(layout.NetGuid));
         State.LastPollAt = DateTimeOffset.Now;
     }
 

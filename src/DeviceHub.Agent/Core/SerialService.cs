@@ -19,33 +19,55 @@ namespace DeviceHub.Agent.Core;
 public sealed class SerialService : IDisposable
 {
     private readonly ILogger<SerialService> _log;
-    private readonly ConcurrentDictionary<string, NativeSerial.SerialPortInfo> _ports = new(); // "deviceKey|channelId" → 端口
-    private readonly ConcurrentDictionary<string, Session> _sessions = new();                  // "deviceKey|channelId" → 已打开的端口
+    private readonly ConcurrentDictionary<string, NativeSerial.UsbInterfaceInfo> _ports = new(); // "deviceKey|channelId" → COM 口
+    private readonly ConcurrentDictionary<string, Session> _sessions = new();                    // "deviceKey|channelId" → 已打开的端口
 
     public SerialService(ILogger<SerialService> log) => _log = log;
 
     public static bool IsSerialKey(string deviceKey) => deviceKey.StartsWith("ser:", StringComparison.Ordinal);
 
-    /// <summary>当前在线的 USB 串口设备。</summary>
+    /// <summary>
+    /// 当前在线的 USB 串口设备：有 COM 口的，或者有接口没装上驱动的（这样插件能在驱动缺失时接管并提示安装）。
+    /// 同一设备上的网卡接口作为只读的 net 通道一并给出（Detail = NetCfgInstanceId）。
+    /// </summary>
     public IReadOnlyList<DeviceInfo> Devices()
     {
         var list = new List<DeviceInfo>();
-        IReadOnlyList<NativeSerial.SerialPortInfo> ports;
-        try { ports = NativeSerial.Enumerate(); }
-        catch (Exception ex) { _log.LogWarning(ex, "枚举串口失败"); return list; }
+        IReadOnlyList<NativeSerial.UsbInterfaceInfo> ifaces;
+        try { ifaces = NativeSerial.Enumerate(); }
+        catch (Exception ex) { _log.LogWarning(ex, "枚举 USB 串口失败"); return list; }
 
         // 没有容器 Id 时退回父设备实例（实例 Id 末段去掉最后一节，如 "7&4ADB4C9&0"）。
-        foreach (var g in ports.GroupBy(p => (p.Vid, p.Pid, Group: p.ContainerId?.ToString("N") ?? ParentPart(p.InstanceId))))
+        foreach (var g in ifaces.GroupBy(p => (p.Vid, p.Pid, Group: p.ContainerId?.ToString("N") ?? ParentPart(p.InstanceId))))
         {
+            // 只有网卡、没有串口也不缺驱动的设备（普通 USB 网卡）不归串口总线管。
+            if (!g.Any(p => p.Kind is NativeSerial.InterfaceKind.Serial or NativeSerial.InterfaceKind.NoDriver)) continue;
             var key = $"ser:{g.Key.Vid:x4}:{g.Key.Pid:x4}:{g.Key.Group}";
             var channels = new List<HidChannelInfo>();
             foreach (var p in g.OrderBy(p => p.Interface).ThenBy(p => p.PortName, StringComparer.OrdinalIgnoreCase))
             {
-                var baseId = $"mi{(p.Interface < 0 ? "xx" : p.Interface.ToString("x2"))}-serial";
+                var (suffix, kind) = p.Kind switch
+                {
+                    NativeSerial.InterfaceKind.Serial => ("serial", ChannelKinds.Serial),
+                    NativeSerial.InterfaceKind.Net => ("net", ChannelKinds.Net),
+                    _ => ("nodriver", ChannelKinds.NoDriver),
+                };
+                var baseId = $"mi{p.Interface:x2}-{suffix}";
                 var id = baseId;
                 for (int n = 2; channels.Any(c => c.Id == id); n++) id = $"{baseId}#{n}";
-                _ports[K(key, id)] = p;
-                channels.Add(new HidChannelInfo { Id = id, Kind = ChannelKinds.Serial, Interface = p.Interface, InputLength = ChunkSize, OutputLength = ChunkSize });
+                bool io = p.Kind == NativeSerial.InterfaceKind.Serial;
+                if (io) _ports[K(key, id)] = p;
+                channels.Add(new HidChannelInfo
+                {
+                    Id = id, Kind = kind, Interface = p.Interface,
+                    InputLength = io ? ChunkSize : 0, OutputLength = io ? ChunkSize : 0,
+                    Detail = p.Kind switch
+                    {
+                        NativeSerial.InterfaceKind.Net => p.NetCfgInstanceId,
+                        NativeSerial.InterfaceKind.NoDriver => NativeSerial.ProblemText(p.ProblemCode),
+                        _ => p.PortName,
+                    },
+                });
             }
             list.Add(new DeviceInfo
             {
@@ -133,11 +155,11 @@ public sealed class SerialService : IDisposable
         catch (TimeoutException) { return (null, DeviceIoResult.Fail(DeviceIoStatus.Busy, $"正在打开 {info.PortName}…")); }
     }
 
-    private (Session?, DeviceIoResult?) OpenNow(string deviceKey, string channelId, NativeSerial.SerialPortInfo info)
+    private (Session?, DeviceIoResult?) OpenNow(string deviceKey, string channelId, NativeSerial.UsbInterfaceInfo info)
     {
         var k = K(deviceKey, channelId);
         if (_sessions.TryGetValue(k, out var s) && !s.Stop.IsCancellationRequested) return (s, null);
-        var port = new SerialPort(info.PortName, 115200, Parity.None, 8, StopBits.One)
+        var port = new SerialPort(info.PortName!, 115200, Parity.None, 8, StopBits.One)
         {
             DtrEnable = true, RtsEnable = true, Handshake = Handshake.None,
             ReadBufferSize = 64 * 1024, WriteTimeout = 2000,

@@ -18,8 +18,9 @@
       "vid": "0x2ca3",
       "pid": ["0x4006"],
       "channels": [
-        { "role": "at", "kind": "serial", "interface": 2 },
-        { "role": "nmea", "kind": "serial", "interface": 1, "optional": true }
+        { "role": "at", "kind": "serial", "interface": 2, "optional": true },
+        { "role": "nmea", "kind": "serial", "interface": 1, "optional": true },
+        { "role": "net", "kind": "net", "interface": 4, "optional": true }
       ]
     },
     {
@@ -28,8 +29,9 @@
       "vid": "0x2c7c",
       "pid": ["0x0125"],
       "channels": [
-        { "role": "at", "kind": "serial", "interface": 2 },
-        { "role": "nmea", "kind": "serial", "interface": 1, "optional": true }
+        { "role": "at", "kind": "serial", "interface": 2, "optional": true },
+        { "role": "nmea", "kind": "serial", "interface": 1, "optional": true },
+        { "role": "net", "kind": "net", "interface": 4, "optional": true }
       ]
     }
   ],

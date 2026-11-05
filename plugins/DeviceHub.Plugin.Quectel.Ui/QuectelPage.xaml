@@ -50,6 +50,8 @@
         <StackPanel Spacing="6">
             <InfoBar IsOpen="{x:Bind Vm.ShowUnauthorized, Mode=OneWay}" Severity="Warning" IsClosable="False"
                      Title="未授权" Message="插件尚未获得此模块 AT 口的访问授权。"/>
+            <InfoBar IsOpen="{x:Bind Vm.DriverMissing, Mode=OneWay}" Severity="Error" IsClosable="False"
+                     Title="模块驱动未安装" Message="{x:Bind Vm.DriverMessage, Mode=OneWay}"/>
             <Grid Margin="1,0,0,0" ColumnSpacing="12">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -128,6 +130,32 @@
                         </StackPanel>
                     </Border>
                 </VariableSizedWrapGrid>
+
+                <!-- 电脑联网：结论 + 一键修复（建议的网卡模式）+ 依据 -->
+                <InfoBar IsOpen="{x:Bind Vm.PcKnown, Mode=OneWay}" IsClosable="False" Severity="{x:Bind Vm.PcSeverity, Mode=OneWay}"
+                         Title="{x:Bind Vm.PcSummary, Mode=OneWay}" Message="{x:Bind Vm.PcAdvice, Mode=OneWay}" Margin="0,0,0,4">
+                    <InfoBar.ActionButton>
+                        <Button Content="{x:Bind Vm.PcFixText, Mode=OneWay}" Click="PcFix_Click"
+                                Visibility="{x:Bind local:QuectelPage.Show(Vm.PcCanFix), Mode=OneWay}"/>
+                    </InfoBar.ActionButton>
+                </InfoBar>
+                <tk:SettingsExpander Header="电脑联网" Description="Windows 能否通过模块上网">
+                    <tk:SettingsExpander.HeaderIcon><FontIcon Glyph="&#xE839;"/></tk:SettingsExpander.HeaderIcon>
+                    <tk:SettingsExpander.Items>
+                        <tk:SettingsCard Header="Windows 网卡">
+                            <TextBlock Text="{x:Bind Vm.PcAdapter, Mode=OneWay}" Style="{StaticResource ValueText}"/>
+                        </tk:SettingsCard>
+                        <tk:SettingsCard Header="网卡状态">
+                            <TextBlock Text="{x:Bind Vm.PcAdapterState, Mode=OneWay}" Style="{StaticResource ValueText}"/>
+                        </tk:SettingsCard>
+                        <tk:SettingsCard Header="模块数据连接" Description="模块向运营商拨号拿到的地址">
+                            <TextBlock Text="{x:Bind Vm.PcModuleIp, Mode=OneWay}" Style="{StaticResource ValueText}"/>
+                        </tk:SettingsCard>
+                        <tk:SettingsCard Header="USB 网卡模式" Description="在「设置」里修改">
+                            <TextBlock Text="{x:Bind Vm.IpCaption, Mode=OneWay}" Style="{StaticResource ValueText}"/>
+                        </tk:SettingsCard>
+                    </tk:SettingsExpander.Items>
+                </tk:SettingsExpander>
 
                 <tk:SettingsExpander Header="服务小区" Description="{x:Bind Vm.ServingPciText, Mode=OneWay}" IsExpanded="True">
                     <tk:SettingsExpander.HeaderIcon><FontIcon Glyph="&#xE704;"/></tk:SettingsExpander.HeaderIcon>

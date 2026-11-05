@@ -157,22 +157,39 @@ public sealed class PluginSupervisor : IDisposable
             if (!_plugins.MatchPlugins(dev).Contains(entry.PluginId)) continue;
             if (_perms.GetGrant(entry.PluginId, dev.DeviceKey) != AccessScope.Always) continue;
             if (!entry.AttachedDevices.Add(dev.DeviceKey)) continue;
+            _attachedChannels[entry.PluginId + "|" + dev.DeviceKey] = ChannelSignature(dev);
             try { await entry.Api.AttachDeviceAsync(dev); _log.LogInformation("已接管设备 {Dev} → {Plugin}", dev.DeviceKey, entry.PluginId); }
             catch (Exception ex) { _log.LogWarning(ex, "接管设备失败 {Dev}", dev.DeviceKey); }
         }
     }
 
-    /// <summary>设备集合变化后调用：运行中的插件接管新出现的已授权设备，并放开已消失的设备。</summary>
+    /// <summary>插件接管设备时看到的通道组成（"插件|设备" → 签名）；变了就让插件重新接管。</summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _attachedChannels = new();
+
+    private static string ChannelSignature(DeviceInfo d) => string.Join(",", d.Channels.Select(c => c.Id + ":" + c.Kind));
+
+    /// <summary>
+    /// 设备集合变化后调用：运行中的插件接管新出现的已授权设备，并放开已消失的设备。
+    /// 设备还在但通道组成变了（如串口驱动刚装好，nodriver 接口变成 COM 口）时先放开再重新接管，插件拿到新的通道列表。
+    /// </summary>
     public async Task SyncDevicesAsync()
     {
-        var present = _broker.Enumerate().Select(d => d.DeviceKey).ToHashSet();
+        var devices = _broker.Enumerate().GroupBy(d => d.DeviceKey).ToDictionary(g => g.Key, g => g.First());
         foreach (var e in _hosts.Values.Where(e => e.State == PluginRunState.Running))
         {
-            foreach (var gone in e.AttachedDevices.Where(k => !present.Contains(k)).ToList())
+            foreach (var key in e.AttachedDevices.ToList())
             {
-                e.AttachedDevices.Remove(gone);
-                try { if (e.Api is { } api) await api.DetachDeviceAsync(gone); _log.LogInformation("设备已移除 {Dev} ← {Plugin}", gone, e.PluginId); }
-                catch (Exception ex) { _log.LogDebug(ex, "通知设备移除失败 {Dev}", gone); }
+                bool gone = !devices.TryGetValue(key, out var dev);
+                bool changed = !gone && _attachedChannels.TryGetValue(e.PluginId + "|" + key, out var sig) && sig != ChannelSignature(dev!);
+                if (!gone && !changed) continue;
+                e.AttachedDevices.Remove(key);
+                _attachedChannels.TryRemove(e.PluginId + "|" + key, out _);
+                try
+                {
+                    if (e.Api is { } api) await api.DetachDeviceAsync(key);
+                    _log.LogInformation(gone ? "设备已移除 {Dev} ← {Plugin}" : "设备通道已变化，重新接管 {Dev} ← {Plugin}", key, e.PluginId);
+                }
+                catch (Exception ex) { _log.LogDebug(ex, "通知设备移除失败 {Dev}", key); }
             }
             await AttachMatchingDevicesAsync(e);
         }
@@ -187,6 +204,7 @@ public sealed class PluginSupervisor : IDisposable
         if (dev is null) return false;
         if (e.AttachedDevices.Add(deviceKey))
         {
+            _attachedChannels[pluginId + "|" + deviceKey] = ChannelSignature(dev);
             try { await e.Api.AttachDeviceAsync(dev); _log.LogInformation("已接管设备 {Dev} → {Plugin}", deviceKey, pluginId); }
             catch (Exception ex) { _log.LogWarning(ex, "接管设备失败 {Dev}", deviceKey); return false; }
         }

@@ -212,6 +212,7 @@ public sealed class DeviceBroker : IDisposable
             var (ch, spec) = _plugins.ResolveChannelSpec(pluginId, dev, channel);
             if (spec is null) return DeviceIoResult.Fail(DeviceIoStatus.AccessDenied, channel is null ? "插件未声明任何通道" : $"插件未声明通道 {channel}");
             if (ch is null) return DeviceIoResult.Fail(DeviceIoStatus.DeviceGone, "设备没有该串口");
+            if (ch.Kind != ChannelKinds.Serial) return DeviceIoResult.Fail(DeviceIoStatus.Error, ch.Kind == ChannelKinds.NoDriver ? "该接口没有驱动，不能读写" : "该通道只读");
             var r = await io(ch);
             // 端口消失（拔出）时刷新一次枚举，下次按新状态解析。
             if (r.Status == DeviceIoStatus.DeviceGone) Enumerate();

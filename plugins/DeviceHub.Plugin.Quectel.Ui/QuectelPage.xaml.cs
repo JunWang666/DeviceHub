@@ -202,14 +202,27 @@ public sealed partial class QuectelPage : UserControl
     private async void UsbNet_Changed(object sender, SelectionChangedEventArgs e)
     {
         if (Vm.Applying || UsbNetBox.SelectedIndex < 0 || UsbNetBox.SelectedIndex == Vm.UsbNetIndex) return;
-        int mode = UsbNetBox.SelectedIndex;
-        var name = ((ComboBoxItem)UsbNetBox.SelectedItem).Content;
+        if (!await ChangeUsbNetAsync(UsbNetBox.SelectedIndex)) Revert();
+    }
+
+    /// <summary>"电脑联网"诊断给出的一键修复：切到建议的网卡模式。</summary>
+    private async void PcFix_Click(object sender, RoutedEventArgs e)
+    {
+        if (Vm.State.PcLink.SuggestUsbNet is var mode and >= 0) await ChangeUsbNetAsync(mode);
+    }
+
+    /// <summary>确认 → 设置网卡模式 → 询问是否立即重启。用户取消时返回 false。</summary>
+    private async Task<bool> ChangeUsbNetAsync(int mode)
+    {
+        var name = AtParse.UsbNetName(mode);
+        var extra = mode == 3 ? "\n\nRNDIS 用 Windows 自带驱动，切换后通常插上即可上网。" : "";
         if (!await ConfirmAsync("切换 USB 网卡模式",
-                $"把模块的 USB 网卡改为「{name}」，重启模块后生效，USB 设备组成会变化。\n\n大疆设备上使用时需要 ECM 模式，用完记得改回。"))
-        { Revert(); return; }
+                $"把模块的 USB 网卡改为「{name}」，重启模块后生效，USB 设备组成会变化。{extra}\n\n大疆设备上使用时需要 ECM 模式，用完记得改回。"))
+            return false;
         await Vm.InvokeAsync("SetUsbNet", new { mode });
         if (await ConfirmAsync("现在重启模块？", "网卡模式要重启模块后才生效。", "重启"))
             await Vm.InvokeAsync("Reboot", new { });
+        return true;
     }
 
     private async void Reboot_Click(object sender, RoutedEventArgs e)

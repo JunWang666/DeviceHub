@@ -20,6 +20,7 @@ public sealed class QuectelWidgets : IPluginWidgetProvider
         if (s is null) return WidgetKit.Notice("读取中…");
         if (!s.Authorized) return WidgetKit.Notice("未授权");
         if (!s.Connected) return WidgetKit.Notice("未连接");
+        if (!s.Driver.AtPortReady) return WidgetKit.Notice("需要安装驱动");
         if (s.Network.Cfun == 4) return WidgetKit.Notice("飞行模式");
         var n = s.Network;
         bool registered = n.EpsRegistration is 1 or 5;

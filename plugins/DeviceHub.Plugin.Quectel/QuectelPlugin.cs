@@ -29,16 +29,27 @@ public sealed class QuectelPlugin : IDevicePlugin
         var key = device.DeviceKey;
         var st = _states.GetOrAdd(key, _ => new QuectelState());
         st.Connected = true;
-        st.Module.AtPort = "USB 接口 2（AT 口）";
+        var layout = ModuleLayout.From(device.Channels);
+        st.Driver = new DriverInfo { AtPortReady = layout.AtPort is not null, AtPortName = layout.AtPort ?? "", Missing = layout.Missing.ToList() };
+        st.Module.AtPort = layout.AtPort is { } p ? $"{p}（USB 接口 2）" : "没有驱动";
         var scope = await _ctx.Device.RequestAccessAsync(key, "通过 AT 口读取 4G 模块的信号、SIM 与网络状态，并按你的操作修改频段、小区锁定、GPS 与短信");
         st.Authorized = scope != AccessScope.Denied;
+        if (_sessions.TryRemove(key, out var old)) await old.DisposeAsync();
+
+        if (!st.Driver.AtPortReady)
+        {
+            // 驱动没装：模块的 AT 口还不是 COM 口，没法通信。装好驱动后核心会让插件重新接管。
+            st.PcLink = PcLink.Evaluate(layout, st, PcLink.Lookup(layout.NetGuid));
+            st.Status = st.Authorized ? "模块的 AT 口没有驱动，装好驱动后自动连接" : "用户拒绝授权";
+            await Push(key, st);
+            return;
+        }
         st.Status = st.Authorized ? "正在读取模块…" : "用户拒绝授权";
         await Push(key, st);
         if (!st.Authorized) return;
 
-        if (_sessions.TryRemove(key, out var old)) await old.DisposeAsync();
         var session = new ModuleSession(new BrokerTransport(_ctx.Device, key, "at"), st, () => Push(key, st),
-            k => _ctx.Storage.GetAsync<string>(k), (k, v) => _ctx.Storage.SetAsync(k, v));
+            k => _ctx.Storage.GetAsync<string>(k), (k, v) => _ctx.Storage.SetAsync(k, v)) { Layout = layout };
         session.Notice += (kind, text) => _ = _ctx.Notify.ShowOsdAsync(key, new OsdContent { Kind = kind, Text = text });
         _sessions[key] = session;
         _ = Task.Run(session.StartAsync, CancellationToken.None);
@@ -68,7 +79,7 @@ public sealed class QuectelPlugin : IDevicePlugin
         {
             Glyph = "", // 信号格
             // 核心只在设备列表变化时来取副标题（刚授权时模块还没读完），没数据时不给，免得侧边栏显示"—"。
-            Subtitle = !st.Connected ? "未连接" : parts.Count > 0 ? string.Join(" · ", parts)
+            Subtitle = !st.Connected ? "未连接" : !st.Driver.AtPortReady ? "需要安装驱动" : parts.Count > 0 ? string.Join(" · ", parts)
                 : n.EpsRegistration is { } reg ? AtParse.RegText(reg) : null,
             Details = new DeviceDetailItem[]
             {
@@ -76,7 +87,9 @@ public sealed class QuectelPlugin : IDevicePlugin
                 new("固件", st.Module.Revision.Length > 0 ? st.Module.Revision : "未读取"),
                 new("IMEI", st.Module.Imei.Length > 0 ? st.Module.Imei : "未读取"),
                 new("USB 网卡模式", AtParse.UsbNetName(st.Module.UsbNet)),
-                new("控制通道", "USB 接口 2（AT 口，串口）"),
+                new("控制通道", st.Module.AtPort),
+                new("驱动", st.Driver.Missing.Count == 0 ? "正常" : string.Join("；", st.Driver.Missing)),
+                new("电脑联网", st.PcLink.Summary.Length > 0 ? st.PcLink.Summary : "未检查"),
                 new("SIM", st.Sim.State.Length > 0 ? st.Sim.State : "未读取"),
                 new("最近刷新", st.LastPollAt is { } t ? t.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") : "尚未读取"),
                 new("已支持", "信号与小区信息、邻区、频段锁定、小区/频点锁定、网络制式、漫游、飞行模式、重启、USB 网卡模式、GPS、短信收发、AT 控制台"),
@@ -97,7 +110,7 @@ public sealed class QuectelPlugin : IDevicePlugin
         var st = await StateAsync(deviceKey);
         if (!_sessions.TryGetValue(deviceKey, out var s))
         {
-            st.Status = !st.Authorized ? "未授权" : "模块未连接";
+            st.Status = !st.Authorized ? "未授权" : !st.Driver.AtPortReady ? "AT 口没有驱动，无法操作模块" : "模块未连接";
             return Json(st);
         }
         var a = string.IsNullOrWhiteSpace(argsJson) ? default : JsonDocument.Parse(argsJson).RootElement;
