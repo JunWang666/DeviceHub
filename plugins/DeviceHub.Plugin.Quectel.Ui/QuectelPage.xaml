@@ -39,44 +39,30 @@
         </Style>
     </UserControl.Resources>
 
-    <Grid RowSpacing="12">
+    <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- 页头：型号、注册状态、刷新、最近一次操作的结果 -->
-        <StackPanel Spacing="6">
-            <InfoBar IsOpen="{x:Bind Vm.ShowUnauthorized, Mode=OneWay}" Severity="Warning" IsClosable="False"
+        <!-- 只有出问题时才占位置：未授权 / 驱动不对。设备名与运营商、信号由核心的页头显示，这里不重复 -->
+        <StackPanel>
+            <InfoBar IsOpen="{x:Bind Vm.ShowUnauthorized, Mode=OneWay}" Severity="Warning" IsClosable="False" Margin="0,0,0,8"
                      Title="未授权" Message="插件尚未获得此模块 AT 口的访问授权。"/>
-            <InfoBar IsOpen="{x:Bind Vm.DriverMissing, Mode=OneWay}" Severity="Error" IsClosable="False"
+            <InfoBar IsOpen="{x:Bind Vm.DriverMissing, Mode=OneWay}" Severity="Error" IsClosable="False" Margin="0,0,0,8"
                      Title="{x:Bind Vm.DriverTitle, Mode=OneWay}" Message="{x:Bind Vm.DriverMessage, Mode=OneWay}"/>
-            <Grid Margin="1,0,0,0" ColumnSpacing="12">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <FontIcon Glyph="{x:Bind Vm.SignalGlyph, Mode=OneWay}" FontSize="28" VerticalAlignment="Center"/>
-                <StackPanel Grid.Column="1">
-                    <TextBlock Text="{x:Bind Vm.Title, Mode=OneWay}" Style="{StaticResource SubtitleTextBlockStyle}"/>
-                    <TextBlock Text="{x:Bind Vm.ConnectionText, Mode=OneWay}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
-                </StackPanel>
-                <ProgressRing Grid.Column="2" IsActive="{x:Bind Vm.Busy, Mode=OneWay}" Width="20" Height="20"/>
-                <Button Grid.Column="3" VerticalAlignment="Center" Click="Refresh_Click">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <FontIcon Glyph="&#xE72C;" FontSize="14"/>
-                        <TextBlock Text="刷新"/>
-                    </StackPanel>
-                </Button>
-            </Grid>
-            <TextBlock Text="{x:Bind Vm.Status, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
-                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="1,0,0,0"/>
         </StackPanel>
 
-        <SelectorBar x:Name="Sections" Grid.Row="1" SelectionChanged="Sections_SelectionChanged">
+        <!-- 一行：左边标签，右边 注册状态 · 最近一次操作结果、忙碌转圈、刷新 -->
+        <Grid Grid.Row="1" ColumnSpacing="8" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+        <SelectorBar x:Name="Sections" SelectionChanged="Sections_SelectionChanged">
             <SelectorBarItem x:Name="StatusTab" Text="状态" IsSelected="True">
                 <SelectorBarItem.Icon><FontIcon Glyph="&#xE9D9;"/></SelectorBarItem.Icon>
             </SelectorBarItem>
@@ -99,6 +85,14 @@
                 <SelectorBarItem.Icon><FontIcon Glyph="&#xE756;"/></SelectorBarItem.Icon>
             </SelectorBarItem>
         </SelectorBar>
+            <TextBlock Grid.Column="1" Text="{x:Bind Vm.HeaderLine, Mode=OneWay}" Style="{StaticResource CaptionTextBlockStyle}"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" HorizontalAlignment="Right"
+                       TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind Vm.HeaderLine, Mode=OneWay}"/>
+            <ProgressRing Grid.Column="2" IsActive="{x:Bind Vm.Busy, Mode=OneWay}" Width="16" Height="16" VerticalAlignment="Center"/>
+            <Button Grid.Column="3" Click="Refresh_Click" ToolTipService.ToolTip="刷新" Padding="8,6" VerticalAlignment="Center">
+                <FontIcon Glyph="&#xE72C;" FontSize="14"/>
+            </Button>
+        </Grid>
 
         <!-- 状态：信号概览、服务小区、邻区 -->
         <ScrollViewer x:Name="StatusPanel" Grid.Row="2">

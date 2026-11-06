@@ -25,7 +25,7 @@ public sealed class QuectelViewModel : INotifyPropertyChanged
     public async Task LoadAsync()
     {
         try { Apply(await _bridge.GetStateAsync()); }
-        catch (Exception ex) { _error = "读取失败：" + ex.Message; OnChanged(nameof(Status)); }
+        catch (Exception ex) { _error = "读取失败：" + ex.Message; OnChanged(nameof(Status)); OnChanged(nameof(HeaderLine)); }
     }
 
     private static string D(string? s) => string.IsNullOrEmpty(s) ? "—" : s;
@@ -37,6 +37,8 @@ public sealed class QuectelViewModel : INotifyPropertyChanged
     public string ConnectionText => !State.Authorized ? "未授权" : !State.Connected ? "未连接"
         : State.Network.Cfun == 4 ? "飞行模式" : AtParse.RegText(State.Network.EpsRegistration);
     public bool ShowUnauthorized => !State.Authorized;
+    /// <summary>标签栏右侧的一行：注册状态 · 最近一次操作的结果。</summary>
+    public string HeaderLine => Status.Length > 0 && Status != ConnectionText ? $"{ConnectionText} · {Status}" : ConnectionText;
     public bool Busy => State.Busy;
     public bool CanOperate => State.Authorized && State.Connected && !State.Busy && State.Driver.AtPortReady;
 
@@ -289,7 +291,7 @@ public sealed class QuectelViewModel : INotifyPropertyChanged
     private async Task InvokeCore(string method, object args)
     {
         try { Apply(await _bridge.InvokeAsync(method, JsonSerializer.Serialize(args, J))); }
-        catch (Exception ex) { _error = "操作失败：" + ex.Message; OnChanged(nameof(Status)); }
+        catch (Exception ex) { _error = "操作失败：" + ex.Message; OnChanged(nameof(Status)); OnChanged(nameof(HeaderLine)); }
     }
 
     /// <summary>页面在把后端状态写回控件（ComboBox、开关）期间为 true，此时控件事件不触发操作。</summary>
@@ -307,7 +309,7 @@ public sealed class QuectelViewModel : INotifyPropertyChanged
             _error = "";
             OnChanged(string.Empty); // 刷新全部绑定
         }
-        catch (Exception ex) { _error = "解析失败：" + ex.Message; OnChanged(nameof(Status)); }
+        catch (Exception ex) { _error = "解析失败：" + ex.Message; OnChanged(nameof(Status)); OnChanged(nameof(HeaderLine)); }
         finally { Applying = false; }
     }
 
