@@ -5,7 +5,7 @@
 #   dist\DeviceHub-Setup-<ver>-win-x64.exe  per-user installer (needs Inno Setup 6)
 #   dist\DeviceHub-<ver>-win-x64.msix       MSIX package, signed with a self-signed cert
 #   dist\DeviceHub-Dev.cer                  public cert to trust before installing the MSIX
-param([string]$Version = "0.4.0", [string]$Config = "Release")
+param([string]$Version = "0.5.0", [string]$Config = "Release")
 
 $ErrorActionPreference = "Stop"
 $repo = Split-Path $PSScriptRoot -Parent
