@@ -30,8 +30,13 @@ public sealed class QuectelPlugin : IDevicePlugin
         var st = _states.GetOrAdd(key, _ => new QuectelState());
         st.Connected = true;
         var layout = ModuleLayout.From(device.Channels);
-        st.Driver = new DriverInfo { AtPortReady = layout.AtPort is not null, AtPortName = layout.AtPort ?? "", Missing = layout.Missing.ToList() };
-        st.Module.AtPort = layout.AtPort is { } p ? $"{p}（USB 接口 2）" : "没有驱动";
+        st.Driver = new DriverInfo
+        {
+            AtPortReady = layout.AtRole is not null, AtPortName = layout.AtPort ?? "", Missing = layout.Missing.ToList(), LayoutShifted = layout.Shifted,
+        };
+        st.Module.AtPort = layout.AtPort is { } p
+            ? $"{p}（USB 接口 {(layout.Shifted ? ModuleLayout.ShiftedAtInterface : ModuleLayout.AtInterface)}）"
+            : "没有驱动";
         var scope = await _ctx.Device.RequestAccessAsync(key, "通过 AT 口读取 4G 模块的信号、SIM 与网络状态，并按你的操作修改频段、小区锁定、GPS 与短信");
         st.Authorized = scope != AccessScope.Denied;
         if (_sessions.TryRemove(key, out var old)) await old.DisposeAsync();
@@ -40,7 +45,9 @@ public sealed class QuectelPlugin : IDevicePlugin
         {
             // 驱动没装：模块的 AT 口还不是 COM 口，没法通信。装好驱动后核心会让插件重新接管。
             st.PcLink = PcLink.Evaluate(layout, st, PcLink.Lookup(layout.NetGuid));
-            st.Status = st.Authorized ? "模块的 AT 口没有驱动，装好驱动后自动连接" : "用户拒绝授权";
+            st.Status = !st.Authorized ? "用户拒绝授权"
+                : layout.Shifted ? "模块处于 RNDIS / MBIM 模式，驱动对不上，联系不上 AT 口（见页面顶部说明）"
+                : "模块的 AT 口没有驱动，装好驱动后自动连接";
             await Push(key, st);
             return;
         }
@@ -48,7 +55,7 @@ public sealed class QuectelPlugin : IDevicePlugin
         await Push(key, st);
         if (!st.Authorized) return;
 
-        var session = new ModuleSession(new BrokerTransport(_ctx.Device, key, "at"), st, () => Push(key, st),
+        var session = new ModuleSession(new BrokerTransport(_ctx.Device, key, layout.AtRole!), st, () => Push(key, st),
             k => _ctx.Storage.GetAsync<string>(k), (k, v) => _ctx.Storage.SetAsync(k, v)) { Layout = layout };
         session.Notice += (kind, text) => _ = _ctx.Notify.ShowOsdAsync(key, new OsdContent { Kind = kind, Text = text });
         _sessions[key] = session;
@@ -79,7 +86,7 @@ public sealed class QuectelPlugin : IDevicePlugin
         {
             Glyph = "", // 信号格
             // 核心只在设备列表变化时来取副标题（刚授权时模块还没读完），没数据时不给，免得侧边栏显示"—"。
-            Subtitle = !st.Connected ? "未连接" : !st.Driver.AtPortReady ? "需要安装驱动" : parts.Count > 0 ? string.Join(" · ", parts)
+            Subtitle = !st.Connected ? "未连接" : !st.Driver.AtPortReady ? (st.Driver.LayoutShifted ? "驱动与网卡模式不匹配" : "需要安装驱动") : parts.Count > 0 ? string.Join(" · ", parts)
                 : n.EpsRegistration is { } reg ? AtParse.RegText(reg) : null,
             Details = new DeviceDetailItem[]
             {

@@ -94,14 +94,16 @@ static class DiagSelfTest
         Console.WriteLine($"{(l0.AtPort is null && l0.Missing.Count == 5 ? "PASS" : "FAIL")} 全部没驱动：AT 口不可用，缺 {l0.Missing.Count} 个：{string.Join("；", l0.Missing)}");
         if (l0.AtPort is not null || l0.Missing.Count != 5) fail++;
 
-        Case("全部没驱动（模式未知）", noDriver, new QuectelState(), null, "error", "网卡接口没有驱动");
-        Case("ECM 模式、网卡没驱动", serialOnly, Ok(1), null, "error", "ECM", 3);
-        Case("QMI 模式、网卡没驱动", serialOnly, Ok(0), null, "error", "Quectel USB 驱动", 3);
+        Case("全部没驱动（模式未知）", noDriver, new QuectelState(), null, "error", "网卡接口没有驱动", 0);
+        Case("ECM 模式、网卡没驱动", serialOnly, Ok(1), null, "error", "ECM", 0);
+        Case("QMI 模式、网卡没驱动", serialOnly, Ok(0), null, "error", "Quectel USB 驱动");
         Case("没有网卡接口", noNet, Ok(1), null, "error", "没有提供 USB 网卡");
-        Case("ECM 模式装了 QMI 驱动（本机实测情况）", full, Ok(1), qmiDown, "error", "不匹配", 3);
+        Case("ECM 模式装了 QMI 驱动（本机实测情况）", full, Ok(1), qmiDown, "error", "不匹配", 0);
         Case("RNDIS 正常上网", full, Ok(3), up, "ok", "已连接");
         Case("RNDIS 网卡未连接", full, Ok(3), down, "warning", "网卡未连接");
-        Case("QMI 模式等 Windows 拨号", full, Ok(0), qmiDown, "warning", "需要由 Windows 拨号");
+        var home = Ok(0); home.Network.EpsRegistration = 1;
+        Case("QMI 模式等 Windows 拨号（本地网络）", full, home, qmiDown, "warning", "需要由 Windows 拨号");
+        Case("QMI 模式、SIM 漫游（本机实测情况）", full, Ok(0), qmiDown, "warning", "漫游");
         var noSim = Ok(3); noSim.Sim.State = "NOT INSERTED";
         Case("SIM 未插", full, noSim, down, "error", "SIM 卡不可用");
         var noReg = Ok(3); noReg.Network.EpsRegistration = 2;
@@ -111,6 +113,22 @@ static class DiagSelfTest
         var air = Ok(3); air.Network.Cfun = 4;
         Case("飞行模式", full, air, down, "warning", "飞行模式");
         Case("网卡在系统里找不到", full, Ok(3), null, "warning", "找不到");
+
+        // RNDIS 模式实测布局：接口后移，接口 2 被当成 AT 口（其实是 DM），接口 4 被当成网卡，接口 5 没驱动
+        var rndis = new[] { Ch(2, "serial", "COM5"), Ch(4, "net", "{00000000-0000-0000-0000-000000000001}"), Ch(5, "nodriver", "未安装驱动") };
+        var rndisFixed = new[] { Ch(2, "serial", "COM5"), Ch(4, "net", "{00000000-0000-0000-0000-000000000001}"), Ch(5, "serial", "COM7") };
+        Case("RNDIS 后移布局，接口 5 没驱动", rndis, new QuectelState(), qmiDown, "error", "后移", 0);
+        Case("RNDIS 后移布局，接口 5 已装 AT 驱动", rndisFixed, Ok(3), qmiDown, "error", "后移", 0);
+        void Role(string name, IReadOnlyList<HidChannelInfo> chs, string? expect)
+        {
+            var l = ModuleLayout.From(chs);
+            bool ok = l.AtRole == expect;
+            if (!ok) fail++;
+            Console.WriteLine($"{(ok ? "PASS" : "FAIL")} {name}: shifted={l.Shifted} atRole={l.AtRole ?? "-"} atPort={l.AtPort ?? "-"} 缺驱动={string.Join("；", l.Missing)}");
+        }
+        Role("正常布局用接口 2", full, "at");
+        Role("后移布局不能用接口 2（其实是诊断口）", rndis, null);
+        Role("后移布局改用接口 5", rndisFixed, "at5");
 
         Console.WriteLine(fail == 0 ? "全部通过" : $"{fail} 项失败");
         Environment.ExitCode = fail;

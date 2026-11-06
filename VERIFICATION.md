@@ -371,3 +371,17 @@ src\DeviceHub.App\bin\x64\Debug\net10.0-windows10.0.26100.0\win-x64\DeviceHub.Ap
   启动时只读读取一次 eSIM 信息（判断是否 eUICC）。不做激活码 / 二维码下载（ES9+）。
 - 真卡写入测试：改昵称为 "DeviceHub 测试" 再改回空，均成功，验证了指令编码与 ICCID 编码。UI Automation 走查 eSIM 页显示正确。
 - **未验证**：启用 / 停用 / 删除配置、清除通知没有在真卡上执行（卡上只有一个配置，停用即断网；删除不可恢复；当前没有通知）。
+
+## Quectel：RNDIS / MBIM 模式下接口后移、切回 QMI（2026-11-06）
+
+- **实测问题**：按"电脑联网"建议把模块切到 RNDIS 后，模块 USB 接口组成变为 0/1 RNDIS（e0/01/03）、2 DM、3 NMEA、4 AT、5 Modem。
+  Quectel 驱动按接口号绑定（INF 写死 MI_00…MI_04），于是全部装错：MI_00 被装成 DM 口（代码 10），MI_02（真 DM）成了"AT 口 COM5"，
+  MI_04（真 AT）成了网卡，MI_05 没驱动。插件发到 COM5 的 AT 全部超时，界面里也就没法切回 QMI。
+- **恢复**：用 SetupAPI 单 INF 类驱动列表 + DiInstallDevice（需管理员）把 qcser.inf 的"Quectel USB AT Port"装到 MI_05（COM7）。
+  该口接受 AT（ATI 正常，`usbnet,3`），发 `AT+QCFG="usbnet",0` + `AT+CFUN=1,1` 后模块回到 QMI 布局，驱动全部归位，
+  Windows 第一次识别出移动宽带接口（netsh mbn：IMEI、固件、CT、漫游、信号 83%，未连接）。MI_05 的驱动绑定保留（模块在 QMI 下没有 MI_05）。
+- **插件修正**：不再建议 RNDIS，一律建议 RmNet / QMI；在设置里选 RNDIS / MBIM 时强警告。出现接口 5 即判定为后移布局：
+  不用接口 2，接口 5 有串口驱动时改用它当 AT 口（manifest 新增可选通道 at5），没有时页面说明怎么在设备管理器里给 MI_05 装 AT 口驱动。
+  QMI 模式下诊断为"网卡未连接：QMI / MBIM 模式需要由 Windows 拨号"。
+- `QuectelProbe --diag` 19 个用例全过（新增 RNDIS 后移布局两例与 AT 角色选择三例）。
+- **未验证**：后移布局下插件经接口 5 联系模块、在页面里切回 QMI 的完整流程（本次是手工用 COM7 切回的）。

@@ -36,6 +36,8 @@ public sealed class DriverInfo
     public string AtPortName { get; set; } = "";
     /// <summary>缺驱动的接口，如 "接口 2（AT 口）：未安装驱动"。</summary>
     public List<string> Missing { get; set; } = new();
+    /// <summary>模块处于 RNDIS / MBIM 模式，接口编号后移、Quectel 驱动装错位置（见 ModuleLayout）。</summary>
+    public bool LayoutShifted { get; set; }
 }
 
 /// <summary>"电脑能不能通过模块上网"的诊断：结论 + 依据。</summary>

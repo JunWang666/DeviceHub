@@ -20,6 +20,7 @@
       "channels": [
         { "role": "at", "kind": "serial", "interface": 2, "optional": true },
         { "role": "nmea", "kind": "serial", "interface": 1, "optional": true },
+        { "role": "at5", "kind": "serial", "interface": 5, "optional": true },
         { "role": "net", "kind": "net", "interface": 4, "optional": true }
       ]
     },
@@ -31,6 +32,7 @@
       "channels": [
         { "role": "at", "kind": "serial", "interface": 2, "optional": true },
         { "role": "nmea", "kind": "serial", "interface": 1, "optional": true },
+        { "role": "at5", "kind": "serial", "interface": 5, "optional": true },
         { "role": "net", "kind": "net", "interface": 4, "optional": true }
       ]
     }

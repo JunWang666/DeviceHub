@@ -43,9 +43,13 @@ public sealed class QuectelViewModel : INotifyPropertyChanged
     // —— 驱动 ——
 
     public bool DriverMissing => State.Connected && !State.Driver.AtPortReady;
-    public string DriverMessage =>
-        (State.Driver.Missing.Count > 0 ? string.Join("；", State.Driver.Missing) + "。" : "没有找到模块的 AT 口。")
-        + "\n安装 Quectel Windows USB Driver（NDIS 版，含串口驱动）后会自动连接，不用重新插拔，也不用重启 DeviceHub。";
+    public string DriverTitle => State.Driver.LayoutShifted ? "模块处于 RNDIS / MBIM 模式，驱动对不上" : "模块驱动未安装";
+    public string DriverMessage => State.Driver.LayoutShifted
+        ? "这个模式下 USB 接口编号整体后移两位，Quectel 驱动仍按原编号绑定，所以 Windows 里的「AT 口」其实是诊断口，插件联系不上模块。\n" +
+          "恢复：打开设备管理器，找到模块下没有驱动的接口 5（MI_05）→ 更新驱动程序 → 浏览我的电脑 → 让我从列表中选取 → 端口 → Quectel USB AT Port。" +
+          "装好后插件会自动改用它，然后在「设置」里把 USB 网卡模式改回 RmNet / QMI 并重启模块。"
+        : (State.Driver.Missing.Count > 0 ? string.Join("；", State.Driver.Missing) + "。" : "没有找到模块的 AT 口。")
+          + "\n安装 Quectel Windows USB Driver（NDIS 版，含串口驱动）后会自动连接，不用重新插拔，也不用重启 DeviceHub。";
 
     // —— 电脑联网 ——
 

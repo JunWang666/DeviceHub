@@ -51,7 +51,7 @@
             <InfoBar IsOpen="{x:Bind Vm.ShowUnauthorized, Mode=OneWay}" Severity="Warning" IsClosable="False"
                      Title="未授权" Message="插件尚未获得此模块 AT 口的访问授权。"/>
             <InfoBar IsOpen="{x:Bind Vm.DriverMissing, Mode=OneWay}" Severity="Error" IsClosable="False"
-                     Title="模块驱动未安装" Message="{x:Bind Vm.DriverMessage, Mode=OneWay}"/>
+                     Title="{x:Bind Vm.DriverTitle, Mode=OneWay}" Message="{x:Bind Vm.DriverMessage, Mode=OneWay}"/>
             <Grid Margin="1,0,0,0" ColumnSpacing="12">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>

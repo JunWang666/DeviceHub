@@ -216,7 +216,10 @@ public sealed partial class QuectelPage : UserControl
     private async Task<bool> ChangeUsbNetAsync(int mode)
     {
         var name = AtParse.UsbNetName(mode);
-        var extra = mode == 3 ? "\n\nRNDIS 用 Windows 自带驱动，切换后通常插上即可上网。" : "";
+        var extra = mode is 2 or 3
+            ? "\n\n⚠ 不建议：这个模式会让 USB 接口编号整体后移两位。装了 Quectel 驱动的电脑上，驱动会全部装错位置，" +
+              "DeviceHub 将联系不上模块的 AT 口，要在设备管理器里手动给接口 5 装「Quectel USB AT Port」驱动才能改回来（实测）。"
+            : mode == 0 ? "\n\nRmNet / QMI 配合 Quectel NDIS 驱动使用，重启后在 Windows「设置 → 网络和 Internet → 手机网络」里连接。" : "";
         if (!await ConfirmAsync("切换 USB 网卡模式",
                 $"把模块的 USB 网卡改为「{name}」，重启模块后生效，USB 设备组成会变化。{extra}\n\n大疆设备上使用时需要 ECM 模式，用完记得改回。"))
             return false;
