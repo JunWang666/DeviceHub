@@ -21,6 +21,7 @@ public sealed class QuectelState
     public LockInfo Locks { get; set; } = new();
     public GpsInfo Gps { get; set; } = new();
     public SmsInfo Sms { get; set; } = new();
+    public EsimInfo Esim { get; set; } = new();
     public List<int> Temperatures { get; set; } = new();
     /// <summary>AT 控制台最近的收发记录（"&gt; " 发出，"&lt; " 收到）。</summary>
     public List<string> Console { get; set; } = new();
@@ -211,3 +212,43 @@ public sealed class SmsMessage
     public string Time { get; set; } = "";
     public string Text { get; set; } = "";
 }
+
+/// <summary>eUICC 上的一个配置（SGP.22 ProfileInfo）。</summary>
+public sealed class EsimProfile
+{
+    public string Iccid { get; set; } = "";
+    public string Aid { get; set; } = "";
+    public bool Enabled { get; set; }
+    public string Nickname { get; set; } = "";
+    public string ServiceProvider { get; set; } = "";
+    public string Name { get; set; } = "";
+    /// <summary>test / provisioning / operational。</summary>
+    public string Class { get; set; } = "";
+}
+
+/// <summary>eUICC 上待发送给运营商服务器的通知（SGP.22 NotificationMetadata）。</summary>
+public sealed class EsimNotification
+{
+    public int Seq { get; set; }
+    /// <summary>安装 / 启用 / 停用 / 删除。</summary>
+    public string Operation { get; set; } = "";
+    public string Address { get; set; } = "";
+    public string Iccid { get; set; } = "";
+}
+
+public sealed class EsimInfo
+{
+    /// <summary>null = 还没检查；false = 当前 SIM 不是 eUICC（没有 ISD-R）。</summary>
+    public bool? IsEuicc { get; set; }
+    public string Eid { get; set; } = "";
+    public string SgpVersion { get; set; } = "";
+    public string Firmware { get; set; } = "";
+    public string ProfileVersion { get; set; } = "";
+    public int? FreeNvmBytes { get; set; }
+    public string Sas { get; set; } = "";
+    public List<EsimProfile> Profiles { get; set; } = new();
+    public List<EsimNotification> Notifications { get; set; } = new();
+    public string Error { get; set; } = "";
+    public DateTimeOffset? ReadAt { get; set; }
+}
+

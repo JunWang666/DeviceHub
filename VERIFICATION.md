@@ -358,3 +358,16 @@ src\DeviceHub.App\bin\x64\Debug\net10.0-windows10.0.26100.0\win-x64\DeviceHub.Ap
 - `QuectelProbe --diag` 用合成通道 / 状态跑 14 个用例全过（全部没驱动、ECM / QMI 网卡没驱动、没有网卡接口、模式不匹配、RNDIS 正常 / 未连接、
   QMI 等 Windows 拨号、SIM 未插、未注册、已注册未拨号、飞行模式、网卡找不到）。
 - **未验证**：没有在真机上卸载驱动复现"驱动未安装"，nodriver 枚举与"装好驱动后重新接管"只按代码走查；没有点"改成 RNDIS"实际切换模式。
+
+## Quectel：eSIM（eUICC）本机管理（2026-11-06）
+
+- 模块（EG25-G / QDC507GLEFM21）支持 AT+CSIM / CRSM / CCHO / CCHC / CGLA（AT+CLAC 列表里没有，但 =? 测试均 OK）；双卡槽 `QDSIM: (0,1)`，当前用 0 号。
+- 插入的卡是 eUICC：AT+CCHO 打开 ISD-R（A0000005591010FFFFFFFF8900000100）成功。实测读出 EID 89086030202200000024000032504981、
+  SGP.22 2.2.2、固件 4.2.0、剩余约 468 KB、SAS ED-ZI-UP-0824，含 GSMA 正式 CI；1 个运营配置 "3 Hong Kong"（ICCID 8985203103007146864，已启用），无通知。
+- 插件新增 `EuiccSession`（BER-TLV、STORE DATA 分块、61xx GET RESPONSE / 6Cxx 重发、ICCID 半字节 BCD）与 ES10c 指令：
+  GetEID、GetEuiccInfo2、GetProfilesInfo、ListNotification、EnableProfile / DisableProfile（refreshFlag=true）、DeleteProfile、SetNickname、RemoveNotificationFromList。
+  每次操作都打开通道、做完必关；CCHO 失败时先关掉 1–3 号通道再试一次（上次异常退出留下的）。启用 / 停用后等 SIM 重新 READY（最多 40 秒）再刷新。
+- 页面新增 eSIM 标签：EID（可复制）与卡信息、配置列表（启用 / 停用、改昵称、删除——已启用的不能删）、通知（逐条或全部清除）。所有改动先确认。
+  启动时只读读取一次 eSIM 信息（判断是否 eUICC）。不做激活码 / 二维码下载（ES9+）。
+- 真卡写入测试：改昵称为 "DeviceHub 测试" 再改回空，均成功，验证了指令编码与 ICCID 编码。UI Automation 走查 eSIM 页显示正确。
+- **未验证**：启用 / 停用 / 删除配置、清除通知没有在真卡上执行（卡上只有一个配置，停用即断网；删除不可恢复；当前没有通知）。

@@ -132,6 +132,12 @@ public sealed class QuectelPlugin : IDevicePlugin
             case "LoadSms": await s.LoadSmsAsync(); break;
             case "SendSms": await s.SendSmsAsync(Str(a, "to"), Str(a, "text")); break;
             case "DeleteSms": await s.DeleteSmsAsync(Int(a, "index", -1)); break;
+            case "EsimRead": await s.EsimReadAsync(); break;
+            case "EsimEnable": await s.EsimSwitchAsync(Str(a, "iccid"), true); break;
+            case "EsimDisable": await s.EsimSwitchAsync(Str(a, "iccid"), false); break;
+            case "EsimDelete": await s.EsimDeleteAsync(Str(a, "iccid")); break;
+            case "EsimRename": await s.EsimRenameAsync(Str(a, "iccid"), Str(a, "nickname")); break;
+            case "EsimRemoveNotification": await s.EsimRemoveNotificationAsync(Int(a, "seq", -1)); break;
             case "RunAt": await s.RunAtAsync(Str(a, "command")); break;
             case "ClearConsole": s.ClearConsole(); break;
             default: st.Status = "未知操作 " + method; break;

@@ -30,6 +30,7 @@ public sealed partial class QuectelPage : UserControl
         StatusPanel.Visibility = Show(sel == StatusTab);
         LockPanel.Visibility = Show(sel == LockTab);
         SmsPanel.Visibility = Show(sel == SmsTab);
+        EsimPanel.Visibility = Show(sel == EsimTab);
         GpsPanel.Visibility = Show(sel == GpsTab);
         SettingsPanel.Visibility = Show(sel == SettingsTab);
         AdvancedPanel.Visibility = Show(sel == AdvancedTab);
@@ -281,6 +282,73 @@ public sealed partial class QuectelPage : UserControl
             AfterSmsUpdate();
         }
         finally { _sending = false; }
+    }
+
+    // —— eSIM ——
+
+    private void CopyEid_Click(object sender, RoutedEventArgs e)
+    {
+        if (Vm.State.Esim.Eid.Length == 0) return;
+        var dp = new Windows.ApplicationModel.DataTransfer.DataPackage();
+        dp.SetText(Vm.State.Esim.Eid);
+        Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(dp);
+    }
+
+    private async void EsimRefresh_Click(object sender, RoutedEventArgs e) => await Vm.InvokeAsync("EsimRead", new { });
+
+    private async void EsimSwitch_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not EsimProfile p) return;
+        var name = EsimRow.DisplayName(p);
+        if (p.Enabled)
+        {
+            if (!await ConfirmAsync("停用配置", $"停用「{name}」后，卡上没有启用的配置，模块会断开移动网络（数据、短信都不可用），直到你再启用一个配置。", "停用"))
+                return;
+            await Vm.InvokeAsync("EsimDisable", new { iccid = p.Iccid });
+        }
+        else
+        {
+            var current = Vm.EnabledProfileName;
+            var swap = current.Length > 0 ? $"当前使用的「{current}」会被自动停用。" : "";
+            if (!await ConfirmAsync("启用配置", $"启用「{name}」。{swap}模块会短暂断网，再用这个配置注册网络（约 10–40 秒）。", "启用"))
+                return;
+            await Vm.InvokeAsync("EsimEnable", new { iccid = p.Iccid });
+        }
+    }
+
+    private async void EsimRename_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not EsimProfile p) return;
+        var box = new TextBox { Text = p.Nickname, PlaceholderText = p.Name.Length > 0 ? p.Name : "昵称", MaxLength = 32 };
+        var dlg = new ContentDialog
+        {
+            Title = "修改昵称",
+            Content = new StackPanel { Spacing = 8, Children = { new TextBlock { Text = $"ICCID {p.Iccid}。留空则显示运营商给的名称。", TextWrapping = TextWrapping.Wrap }, box } },
+            PrimaryButtonText = "保存", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Primary, XamlRoot = XamlRoot,
+        };
+        if (await dlg.ShowAsync() != ContentDialogResult.Primary || box.Text.Trim() == p.Nickname) return;
+        await Vm.InvokeAsync("EsimRename", new { iccid = p.Iccid, nickname = box.Text.Trim() });
+    }
+
+    private async void EsimDelete_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not EsimProfile p) return;
+        if (await ConfirmAsync("删除配置",
+                $"从卡上永久删除「{EsimRow.DisplayName(p)}」（ICCID {p.Iccid}）？\n\n删除后无法恢复，要再用只能让运营商重新发一个新的激活码；本插件也不支持下载。", "删除"))
+            await Vm.InvokeAsync("EsimDelete", new { iccid = p.Iccid });
+    }
+
+    private async void EsimClearNotification_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not EsimNotification n) return;
+        if (await ConfirmAsync("清除通知", "这条通知本应告诉运营商服务器配置发生了变化。清除后不会再发送，通常不影响使用。", "清除"))
+            await Vm.InvokeAsync("EsimRemoveNotification", new { seq = n.Seq });
+    }
+
+    private async void EsimClearNotifications_Click(object sender, RoutedEventArgs e)
+    {
+        if (await ConfirmAsync("清除全部通知", "这些通知本应告诉运营商服务器配置发生了变化。清除后不会再发送，通常不影响使用。", "全部清除"))
+            await Vm.InvokeAsync("EsimRemoveNotification", new { seq = -1 });
     }
 
     // —— AT 控制台 ——

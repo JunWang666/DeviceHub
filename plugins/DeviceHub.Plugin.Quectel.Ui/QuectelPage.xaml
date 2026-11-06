@@ -86,6 +86,9 @@
             <SelectorBarItem x:Name="SmsTab" Text="短信">
                 <SelectorBarItem.Icon><FontIcon Glyph="&#xE8BD;"/></SelectorBarItem.Icon>
             </SelectorBarItem>
+            <SelectorBarItem x:Name="EsimTab" Text="eSIM">
+                <SelectorBarItem.Icon><FontIcon Glyph="&#xE1D8;"/></SelectorBarItem.Icon>
+            </SelectorBarItem>
             <SelectorBarItem x:Name="GpsTab" Text="定位">
                 <SelectorBarItem.Icon><FontIcon Glyph="&#xE707;"/></SelectorBarItem.Icon>
             </SelectorBarItem>
@@ -383,6 +386,70 @@
                 </Grid>
             </Border>
         </Grid>
+
+        <!-- eSIM：EID 与卡信息、配置（启用 / 停用 / 改名 / 删除）、通知 -->
+        <ScrollViewer x:Name="EsimPanel" Grid.Row="2" Visibility="Collapsed">
+            <StackPanel Spacing="{StaticResource CardSpacing}" Margin="0,0,0,36">
+                <InfoBar IsOpen="{x:Bind Vm.EsimNotEuicc, Mode=OneWay}" Severity="Informational" IsClosable="False"
+                         Title="当前 SIM 卡不是 eUICC" Message="这张卡没有 eSIM 管理应用（ISD-R），没有可管理的 eSIM 配置。插入 eSIM 卡（eUICC）后点「刷新」。"/>
+                <InfoBar IsOpen="{x:Bind Vm.EsimUnknown, Mode=OneWay}" Severity="Informational" IsClosable="False"
+                         Message="{x:Bind Vm.EsimUnknownText, Mode=OneWay}"/>
+
+                <tk:SettingsCard Header="EID" Description="{x:Bind Vm.EsimCardText, Mode=OneWay}">
+                    <tk:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE1D8;"/></tk:SettingsCard.HeaderIcon>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="{x:Bind Vm.Eid, Mode=OneWay}" FontFamily="Consolas" VerticalAlignment="Center" IsTextSelectionEnabled="True"/>
+                        <Button Click="CopyEid_Click" ToolTipService.ToolTip="复制 EID" Padding="8,6">
+                            <FontIcon Glyph="&#xE8C8;" FontSize="14"/>
+                        </Button>
+                        <Button Click="EsimRefresh_Click" ToolTipService.ToolTip="重新读取" Padding="8,6" IsEnabled="{x:Bind Vm.CanOperate, Mode=OneWay}">
+                            <FontIcon Glyph="&#xE72C;" FontSize="14"/>
+                        </Button>
+                    </StackPanel>
+                </tk:SettingsCard>
+
+                <TextBlock Text="配置" Style="{StaticResource GroupHeaderStyle}"/>
+                <TextBlock Text="卡上没有 eSIM 配置" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Margin="1,0,0,0"
+                           Visibility="{x:Bind local:QuectelPage.Show(Vm.EsimNoProfiles), Mode=OneWay}"/>
+                <ItemsControl ItemsSource="{x:Bind Vm.EsimProfiles, Mode=OneWay}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="local:EsimRow">
+                            <tk:SettingsCard Header="{x:Bind Title}" Description="{x:Bind Detail}" Margin="0,0,0,4">
+                                <tk:SettingsCard.HeaderIcon><FontIcon Glyph="&#xE8EA;"/></tk:SettingsCard.HeaderIcon>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="{x:Bind SwitchText}" Style="{x:Bind SwitchStyle}" Tag="{x:Bind Profile}"
+                                            Click="EsimSwitch_Click" IsEnabled="{x:Bind CanSwitch}"/>
+                                    <Button Tag="{x:Bind Profile}" Click="EsimRename_Click" IsEnabled="{x:Bind CanRename}" ToolTipService.ToolTip="改昵称" Padding="8,6">
+                                        <FontIcon Glyph="&#xE8AC;" FontSize="14"/>
+                                    </Button>
+                                    <Button Tag="{x:Bind Profile}" Click="EsimDelete_Click" IsEnabled="{x:Bind CanDelete}" ToolTipService.ToolTip="删除（先停用）" Padding="8,6">
+                                        <FontIcon Glyph="&#xE74D;" FontSize="14"/>
+                                    </Button>
+                                </StackPanel>
+                            </tk:SettingsCard>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <TextBlock Text="通知" Style="{StaticResource GroupHeaderStyle}"/>
+                <tk:SettingsExpander Header="待发送通知" Description="{x:Bind Vm.EsimNotificationsText, Mode=OneWay}"
+                                     ItemsSource="{x:Bind Vm.EsimNotifications, Mode=OneWay}">
+                    <tk:SettingsExpander.HeaderIcon><FontIcon Glyph="&#xEA8F;"/></tk:SettingsExpander.HeaderIcon>
+                    <Button Content="全部清除" Click="EsimClearNotifications_Click"
+                            Visibility="{x:Bind local:QuectelPage.Show(Vm.EsimHasNotifications), Mode=OneWay}" IsEnabled="{x:Bind Vm.CanOperate, Mode=OneWay}"/>
+                    <tk:SettingsExpander.ItemTemplate>
+                        <DataTemplate x:DataType="local:NotificationRow">
+                            <tk:SettingsCard Header="{x:Bind Title}" Description="{x:Bind Detail}">
+                                <Button Content="清除" Tag="{x:Bind Notification}" Click="EsimClearNotification_Click"/>
+                            </tk:SettingsCard>
+                        </DataTemplate>
+                    </tk:SettingsExpander.ItemTemplate>
+                </tk:SettingsExpander>
+
+                <TextBlock TextWrapping="Wrap" Style="{StaticResource TileCaption}" Margin="1,12,0,0"
+                           Text="eSIM 指令经模块 AT 口直接发给卡（SGP.22 ES10）。启用 / 停用配置时模块会短暂掉网。通知本应由手机发给运营商服务器，这里只能从卡上清除，不会联网发送。不支持用激活码 / 二维码下载新配置。"/>
+            </StackPanel>
+        </ScrollViewer>
 
         <!-- 定位 -->
         <ScrollViewer x:Name="GpsPanel" Grid.Row="2" Visibility="Collapsed">

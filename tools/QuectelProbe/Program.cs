@@ -29,6 +29,14 @@ if (args.Contains("--lock-test") && st.Serving is { Earfcn: { } e, Pci: { } p })
     await s.UnlockAsync();
     Console.WriteLine($"unlock: {st.Status}; locked={st.Locks.Locked}");
 }
+if (args.Contains("--esim-rename-test") && st.Esim.Profiles.FirstOrDefault() is { } prof)
+{
+    var original = prof.Nickname;
+    await s.EsimRenameAsync(prof.Iccid, "DeviceHub 测试");
+    Console.WriteLine($"rename: {st.Status}; nickname now = '{st.Esim.Profiles.FirstOrDefault(p => p.Iccid == prof.Iccid)?.Nickname}'");
+    await s.EsimRenameAsync(prof.Iccid, original);
+    Console.WriteLine($"restore: {st.Status}; nickname now = '{st.Esim.Profiles.FirstOrDefault(p => p.Iccid == prof.Iccid)?.Nickname}'");
+}
 int i = Array.IndexOf(args, "--at");
 if (i >= 0 && i + 1 < args.Length)
 {

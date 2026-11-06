@@ -66,6 +66,7 @@ public sealed class ModuleSession : IAsyncDisposable
         await _at.SendAsync("AT+CMEE=2");
         await ReadInfoAsync();
         await PollAsync();
+        await ReadEsimCoreAsync(); // 只读：判断是不是 eUICC，读 EID 与配置列表
         State.Status = _at.Fault is null ? "" : State.Status;
         await _push();
         _poller = Task.Run(PollLoopAsync);
@@ -410,6 +411,118 @@ public sealed class ModuleSession : IAsyncDisposable
             if (cmgf is not null) await Q($"AT+CMGF={cmgf}");
         }
     }
+
+    // —— eSIM（eUICC 本机管理：SGP.22 ES10，经 AT+CCHO/CGLA/CCHC）——
+
+    private sealed class NotEuiccException() : InvalidOperationException("当前 SIM 卡不是 eUICC（没有 eSIM 管理应用）");
+
+    /// <summary>打开 ISD-R 通道执行 body，结束时总是关闭通道。卡不是 eUICC 时记下并抛 <see cref="NotEuiccException"/>。</summary>
+    private async Task<T> WithIsdrAsync<T>(Func<EuiccSession, Task<T>> body)
+    {
+        var e = new EuiccSession((cmd, t) => Q(cmd, t));
+        if (!await e.OpenAsync())
+        {
+            State.Esim = new EsimInfo { IsEuicc = false, ReadAt = DateTimeOffset.Now };
+            throw new NotEuiccException();
+        }
+        try { return await body(e); }
+        finally { try { await e.CloseAsync(); } catch { /* 启用 / 停用后卡已刷新，通道自然失效 */ } }
+    }
+
+    /// <summary>读 EID、卡信息、配置列表与通知（只读）。</summary>
+    private async Task<string> ReadEsimCoreAsync()
+    {
+        if (State.Sim.State != "READY") { State.Esim.Error = "SIM 卡未就绪"; return "SIM 卡未就绪，无法读取 eSIM"; }
+        try
+        {
+            var info = await WithIsdrAsync(async e =>
+            {
+                var i = new EsimInfo { IsEuicc = true, Eid = await e.GetEidAsync() };
+                await e.ReadInfo2Async(i);
+                i.Profiles = await e.GetProfilesAsync();
+                i.Notifications = await e.ListNotificationsAsync();
+                i.ReadAt = DateTimeOffset.Now;
+                return i;
+            });
+            State.Esim = info;
+            return $"已读取 eSIM：{info.Profiles.Count} 个配置";
+        }
+        catch (NotEuiccException ex) { return ex.Message; }
+        catch (Exception ex)
+        {
+            State.Esim.Error = ex.Message;
+            return "读取 eSIM 失败：" + ex.Message;
+        }
+    }
+
+    public Task EsimReadAsync() => UserOp("读取 eSIM", ReadEsimCoreAsync);
+
+    /// <summary>启用 / 停用：卡随后让模块重新读卡，模块会短暂掉网。等 SIM 重新就绪后刷新 SIM 信息与配置列表。</summary>
+    public Task EsimSwitchAsync(string iccid, bool enable) => UserOp(enable ? "启用配置" : "停用配置", async () =>
+    {
+        int code = -1;
+        try { code = await WithIsdrAsync(e => enable ? e.EnableAsync(iccid) : e.DisableAsync(iccid)); }
+        catch (Exception ex) { return (enable ? "启用失败：" : "停用失败：") + ex.Message; }
+        if (code != 0) return (enable ? "启用失败：" : "停用失败：") + EuiccSession.ResultText(code);
+
+        // 等模块重新识别 SIM（停用后没有可用配置时会一直是 NOT READY / 无服务，最多等 40 秒）。
+        string sim = "";
+        for (int i = 0; i < 20; i++)
+        {
+            await Task.Delay(2000);
+            sim = (await Q("AT+CPIN?")).Value("+CPIN:") ?? "";
+            if (sim == "READY") break;
+        }
+        State.Sim.State = sim.Length > 0 ? sim : "NOT READY";
+        if (sim == "READY") { await ReadSimAsync(); await ReadEsimCoreAsync(); }
+        else State.Esim.Profiles.ForEach(p => p.Enabled = enable && p.Iccid == iccid);
+        return enable
+            ? (sim == "READY" ? "已启用，模块正在用新配置注册网络" : "已启用，但模块还没识别到 SIM，稍后点刷新")
+            : "已停用；卡上没有启用的配置时模块无法联网";
+    });
+
+    public Task EsimDeleteAsync(string iccid) => UserOp("删除配置", async () =>
+    {
+        if (State.Esim.Profiles.FirstOrDefault(p => p.Iccid == iccid) is { Enabled: true }) return "先停用这个配置再删除";
+        try
+        {
+            var code = await WithIsdrAsync(e => e.DeleteAsync(iccid));
+            await ReadEsimCoreAsync();
+            return code == 0 ? "已删除配置" : "删除失败：" + EuiccSession.ResultText(code);
+        }
+        catch (Exception ex) { return "删除失败：" + ex.Message; }
+    });
+
+    public Task EsimRenameAsync(string iccid, string nickname) => UserOp("修改昵称", async () =>
+    {
+        nickname = nickname.Trim();
+        if (System.Text.Encoding.UTF8.GetByteCount(nickname) > 64) return "昵称太长（最多 64 字节）";
+        try
+        {
+            var code = await WithIsdrAsync(e => e.SetNicknameAsync(iccid, nickname));
+            await ReadEsimCoreAsync();
+            return code == 0 ? "已修改昵称" : "修改失败：" + EuiccSession.ResultText(code);
+        }
+        catch (Exception ex) { return "修改失败：" + ex.Message; }
+    });
+
+    /// <summary>删除通知（seq &lt; 0 = 全部）。通知本应发给运营商服务器，本插件不联网发送，只从卡上清除。</summary>
+    public Task EsimRemoveNotificationAsync(int seq) => UserOp("清除通知", async () =>
+    {
+        try
+        {
+            var seqs = seq >= 0 ? new List<int> { seq } : State.Esim.Notifications.Select(n => n.Seq).ToList();
+            int failed = await WithIsdrAsync(async e =>
+            {
+                int bad = 0;
+                foreach (var s in seqs) if (await e.RemoveNotificationAsync(s) != 0) bad++;
+                return bad;
+            });
+            await ReadEsimCoreAsync();
+            return failed == 0 ? $"已清除 {seqs.Count} 条通知" : $"{failed} 条通知清除失败";
+        }
+        catch (Exception ex) { return "清除失败：" + ex.Message; }
+    });
 
     // —— AT 控制台 ——
 

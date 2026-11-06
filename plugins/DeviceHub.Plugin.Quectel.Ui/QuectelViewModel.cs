@@ -235,6 +235,34 @@ public sealed class QuectelViewModel : INotifyPropertyChanged
         SelectThread(null);
     }
 
+    // —— eSIM ——
+
+    public bool EsimIsEuicc => State.Esim.IsEuicc == true;
+    public bool EsimNotEuicc => State.Esim.IsEuicc == false;
+    public bool EsimUnknown => State.Esim.IsEuicc is null;
+    public string EsimUnknownText => State.Esim.Error.Length > 0 ? "读取失败：" + State.Esim.Error : "还没读取 eSIM 信息";
+    public string Eid => D(State.Esim.Eid);
+    public string EsimCardText
+    {
+        get
+        {
+            var e = State.Esim;
+            var parts = new List<string>();
+            if (e.SgpVersion.Length > 0) parts.Add("SGP.22 " + e.SgpVersion);
+            if (e.Firmware.Length > 0) parts.Add("固件 " + e.Firmware);
+            if (e.FreeNvmBytes is { } b) parts.Add($"剩余空间 {b / 1024} KB");
+            if (e.Sas.Length > 0) parts.Add("SAS " + e.Sas);
+            return string.Join(" · ", parts);
+        }
+    }
+    public List<EsimRow> EsimProfiles => State.Esim.Profiles.Select(p => new EsimRow(p, CanOperate)).ToList();
+    public bool EsimNoProfiles => EsimIsEuicc && State.Esim.Profiles.Count == 0;
+    public List<NotificationRow> EsimNotifications => State.Esim.Notifications.Select(n => new NotificationRow(n)).ToList();
+    public bool EsimHasNotifications => State.Esim.Notifications.Count > 0;
+    public string EsimNotificationsText => State.Esim.Notifications.Count == 0 ? "没有待发送的通知"
+        : $"{State.Esim.Notifications.Count} 条待发送给运营商服务器的通知";
+    public string EnabledProfileName => State.Esim.Profiles.FirstOrDefault(p => p.Enabled) is { } p ? EsimRow.DisplayName(p) : "";
+
     // —— 模块信息 ——
 
     public string Revision => D(State.Module.Revision);
@@ -307,6 +335,39 @@ public sealed class BandItem(int band, bool on)
     public int Band { get; } = band;
     public string Label => $"B{Band}";
     public bool IsOn { get; set; } = on;
+}
+
+/// <summary>eSIM 配置列表的一行。</summary>
+public sealed class EsimRow(EsimProfile p, bool canOperate)
+{
+    public EsimProfile Profile { get; } = p;
+    public static string DisplayName(EsimProfile p) =>
+        p.Nickname.Length > 0 ? p.Nickname : p.Name.Length > 0 ? p.Name : p.ServiceProvider.Length > 0 ? p.ServiceProvider : p.Iccid;
+    public string Title => DisplayName(Profile) + (Profile.Enabled ? "（使用中）" : "");
+    public string Detail
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (Profile.ServiceProvider.Length > 0 && Profile.ServiceProvider != DisplayName(Profile)) parts.Add(Profile.ServiceProvider);
+            parts.Add("ICCID " + Profile.Iccid);
+            parts.Add(Profile.Class switch { "test" => "测试配置", "provisioning" => "引导配置", "operational" => "运营配置", _ => "" });
+            return string.Join(" · ", parts.Where(x => x.Length > 0));
+        }
+    }
+    public string SwitchText => Profile.Enabled ? "停用" : "启用";
+    public bool CanSwitch => canOperate;
+    public bool CanDelete => canOperate && !Profile.Enabled;
+    public bool CanRename => canOperate;
+    public Microsoft.UI.Xaml.Style SwitchStyle => (Microsoft.UI.Xaml.Style)Microsoft.UI.Xaml.Application.Current.Resources[Profile.Enabled ? "DefaultButtonStyle" : "AccentButtonStyle"];
+}
+
+/// <summary>eSIM 通知列表的一行。</summary>
+public sealed class NotificationRow(EsimNotification n)
+{
+    public EsimNotification Notification { get; } = n;
+    public string Title => $"#{Notification.Seq} · {(Notification.Operation.Length > 0 ? Notification.Operation : "通知")}";
+    public string Detail => string.Join(" · ", new[] { Notification.Iccid.Length > 0 ? "ICCID " + Notification.Iccid : "", Notification.Address }.Where(x => x.Length > 0));
 }
 
 /// <summary>会话列表的一项：一个号码的全部短信。</summary>
